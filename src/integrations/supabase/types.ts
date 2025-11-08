@@ -52,6 +52,33 @@ export type Database = {
           },
         ]
       }
+      chapters: {
+        Row: {
+          chapter_name: string
+          created_at: string
+          date_taught: string
+          id: string
+          notes: string | null
+          subject: string
+        }
+        Insert: {
+          chapter_name: string
+          created_at?: string
+          date_taught: string
+          id?: string
+          notes?: string | null
+          subject: string
+        }
+        Update: {
+          chapter_name?: string
+          created_at?: string
+          date_taught?: string
+          id?: string
+          notes?: string | null
+          subject?: string
+        }
+        Relationships: []
+      }
       chapters_studied: {
         Row: {
           chapter_name: string
@@ -90,6 +117,48 @@ export type Database = {
           },
         ]
       }
+      student_chapters: {
+        Row: {
+          chapter_id: string
+          completed: boolean
+          created_at: string
+          date_completed: string
+          id: string
+          student_id: string
+        }
+        Insert: {
+          chapter_id: string
+          completed?: boolean
+          created_at?: string
+          date_completed?: string
+          id?: string
+          student_id: string
+        }
+        Update: {
+          chapter_id?: string
+          completed?: boolean
+          created_at?: string
+          date_completed?: string
+          id?: string
+          student_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "student_chapters_chapter_id_fkey"
+            columns: ["chapter_id"]
+            isOneToOne: false
+            referencedRelation: "chapters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "student_chapters_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       students: {
         Row: {
           contact_number: string
@@ -117,6 +186,81 @@ export type Database = {
           name?: string
           parent_name?: string
           school_name?: string
+        }
+        Relationships: []
+      }
+      test_results: {
+        Row: {
+          created_at: string
+          date_taken: string
+          id: string
+          marks_obtained: number
+          notes: string | null
+          student_id: string
+          test_id: string
+        }
+        Insert: {
+          created_at?: string
+          date_taken?: string
+          id?: string
+          marks_obtained: number
+          notes?: string | null
+          student_id: string
+          test_id: string
+        }
+        Update: {
+          created_at?: string
+          date_taken?: string
+          id?: string
+          marks_obtained?: number
+          notes?: string | null
+          student_id?: string
+          test_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "test_results_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "test_results_test_id_fkey"
+            columns: ["test_id"]
+            isOneToOne: false
+            referencedRelation: "tests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tests: {
+        Row: {
+          created_at: string
+          date: string
+          grade: string | null
+          id: string
+          name: string
+          subject: string
+          total_marks: number
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          grade?: string | null
+          id?: string
+          name: string
+          subject: string
+          total_marks: number
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          grade?: string | null
+          id?: string
+          name?: string
+          subject?: string
+          total_marks?: number
         }
         Relationships: []
       }
