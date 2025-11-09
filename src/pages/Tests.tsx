@@ -8,15 +8,20 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { FileUp, Plus, Trash2, Edit } from "lucide-react";
+import { FileUp, Plus, Trash2, Edit, Users } from "lucide-react";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import OCRModal from "@/components/OCRModal";
+import BulkMarksEntry from "@/components/BulkMarksEntry";
 
 export default function Tests() {
   const queryClient = useQueryClient();
   const [isAddingTest, setIsAddingTest] = useState(false);
   const [selectedTest, setSelectedTest] = useState<string>("");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [showOCRModal, setShowOCRModal] = useState(false);
+  const [showBulkEntry, setShowBulkEntry] = useState(false);
+  const [extractedTestContent, setExtractedTestContent] = useState("");
 
   // Form states for new test
   const [testName, setTestName] = useState("");
@@ -145,6 +150,37 @@ export default function Tests() {
     },
   });
 
+  // Bulk marks entry mutation
+  const bulkMarksMutation = useMutation({
+    mutationFn: async (marks: Array<{ studentId: string; marks: number }>) => {
+      const records = marks.map((m) => ({
+        test_id: selectedTest,
+        student_id: m.studentId,
+        marks_obtained: m.marks,
+        date_taken: format(new Date(), "yyyy-MM-dd"),
+      }));
+
+      // Delete existing records for these students and test
+      const studentIds = marks.map((m) => m.studentId);
+      await supabase
+        .from("test_results")
+        .delete()
+        .eq("test_id", selectedTest)
+        .in("student_id", studentIds);
+
+      // Insert new records
+      const { error } = await supabase.from("test_results").insert(records);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["test-results"] });
+      toast.success("Bulk marks saved successfully");
+    },
+    onError: () => {
+      toast.error("Failed to save bulk marks");
+    },
+  });
+
   // Delete test result
   const deleteResultMutation = useMutation({
     mutationFn: async (resultId: string) => {
@@ -172,13 +208,18 @@ export default function Tests() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Test Management</h1>
-        <Dialog open={isAddingTest} onOpenChange={setIsAddingTest}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Create Test
-            </Button>
-          </DialogTrigger>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowOCRModal(true)}>
+            <FileUp className="mr-2 h-4 w-4" />
+            Upload Test Paper (OCR)
+          </Button>
+          <Dialog open={isAddingTest} onOpenChange={setIsAddingTest}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Test
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create New Test</DialogTitle>
@@ -249,7 +290,8 @@ export default function Tests() {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -287,7 +329,17 @@ export default function Tests() {
         {selectedTest && selectedTestData && (
           <Card>
             <CardHeader>
-              <CardTitle>Enter Marks - {selectedTestData.name}</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Enter Marks - {selectedTestData.name}</CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowBulkEntry(true)}
+                >
+                  <Users className="mr-2 h-4 w-4" />
+                  Bulk Entry
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
@@ -388,6 +440,26 @@ export default function Tests() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      <OCRModal
+        open={showOCRModal}
+        onOpenChange={setShowOCRModal}
+        onSave={(text) => {
+          setExtractedTestContent(text);
+          toast.success("Test content extracted! You can now use this for reference.");
+        }}
+      />
+
+      {selectedTest && selectedTestData && (
+        <BulkMarksEntry
+          open={showBulkEntry}
+          onOpenChange={setShowBulkEntry}
+          students={students}
+          testId={selectedTest}
+          totalMarks={selectedTestData.total_marks}
+          onSave={(marks) => bulkMarksMutation.mutate(marks)}
+        />
       )}
     </div>
   );
