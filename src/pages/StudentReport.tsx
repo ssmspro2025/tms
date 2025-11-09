@@ -1,14 +1,15 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CalendarIcon, Download, TrendingUp, BookOpen, FileText } from "lucide-react";
+import { CalendarIcon, Download, Brain, Loader2, BookOpen, FileText } from "lucide-react";
 import { format, startOfMonth, endOfMonth } from "date-fns";
+import { toast } from "sonner";
+import { Textarea } from "@/components/ui/textarea";
 
 export default function StudentReport() {
   const [selectedStudentId, setSelectedStudentId] = useState<string>("");
@@ -17,6 +18,7 @@ export default function StudentReport() {
     to: endOfMonth(new Date()),
   });
   const [subjectFilter, setSubjectFilter] = useState<string>("all");
+  const [aiSummary, setAiSummary] = useState<string>("");
 
   // Fetch students
   const { data: students = [] } = useQuery({
@@ -70,6 +72,18 @@ export default function StudentReport() {
     enabled: !!selectedStudentId,
   });
 
+  // Fetch all chapters for progress calculation
+  const { data: allChapters = [] } = useQuery({
+    queryKey: ["all-chapters"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("chapters")
+        .select("*");
+      if (error) throw error;
+      return data;
+    },
+  });
+
   // Fetch test results
   const { data: testResults = [] } = useQuery({
     queryKey: ["student-test-results", selectedStudentId, subjectFilter],
@@ -101,6 +115,13 @@ export default function StudentReport() {
   const totalMaxMarks = testResults.reduce((sum, r) => sum + (r.tests?.total_marks || 0), 0);
   const averagePercentage = totalMaxMarks > 0 ? Math.round((totalMarksObtained / totalMaxMarks) * 100) : 0;
 
+  // Calculate chapter progress percentage
+  const completedChaptersCount = chapterProgress.filter(cp => cp.completed).length;
+  const totalChaptersCount = allChapters.length;
+  const chapterCompletionPercentage = totalChaptersCount > 0 
+    ? Math.round((completedChaptersCount / totalChaptersCount) * 100) 
+    : 0;
+
   // Get unique subjects
   const subjects = Array.from(new Set([
     ...chapterProgress.map(c => c.chapters?.subject).filter(Boolean),
@@ -108,6 +129,31 @@ export default function StudentReport() {
   ]));
 
   const selectedStudent = students.find((s) => s.id === selectedStudentId);
+
+  // AI Summary mutation
+  const generateSummaryMutation = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke("ai-student-summary", {
+        body: { studentId: selectedStudentId },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      setAiSummary(data.summary);
+      toast.success("AI summary generated successfully");
+    },
+    onError: (error: any) => {
+      console.error("Error generating summary:", error);
+      if (error.message?.includes("429")) {
+        toast.error("Rate limit exceeded. Please try again in a few moments.");
+      } else if (error.message?.includes("402")) {
+        toast.error("AI credits depleted. Please add funds to your workspace.");
+      } else {
+        toast.error("Failed to generate AI summary");
+      }
+    },
+  });
 
   const exportToCSV = () => {
     if (!selectedStudent) return;
@@ -297,8 +343,19 @@ export default function StudentReport() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <div className="text-lg font-semibold">
-                  Total Chapters Completed: {chapterProgress.length}
+                <div className="grid gap-4 md:grid-cols-3 mb-4">
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Total Chapters</p>
+                    <p className="text-2xl font-bold">{totalChaptersCount}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Completed</p>
+                    <p className="text-2xl font-bold text-green-600">{completedChaptersCount}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Progress</p>
+                    <p className="text-2xl font-bold">{chapterCompletionPercentage}%</p>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   {chapterProgress.map((progress) => (
@@ -387,10 +444,54 @@ export default function StudentReport() {
                   </p>
                 )}
               </div>
-            </CardContent>
-          </Card>
-        </>
-      )}
-    </div>
-  );
-}
+              </CardContent>
+            </Card>
+
+            {/* AI Summary Section */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Brain className="h-5 w-5" />
+                    AI Performance Summary
+                  </CardTitle>
+                  <Button
+                    onClick={() => generateSummaryMutation.mutate()}
+                    disabled={generateSummaryMutation.isPending}
+                    size="sm"
+                  >
+                    {generateSummaryMutation.isPending ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Brain className="mr-2 h-4 w-4" />
+                        Generate AI Summary
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {aiSummary ? (
+                  <Textarea
+                    value={aiSummary}
+                    onChange={(e) => setAiSummary(e.target.value)}
+                    rows={12}
+                    className="resize-none"
+                  />
+                ) : (
+                  <p className="text-muted-foreground text-center py-8">
+                    Click "Generate AI Summary" to get AI-powered insights about this student's
+                    performance
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </div>
+    );
+  }

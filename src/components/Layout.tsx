@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Home, UserPlus, CheckSquare, FileText, BarChart3, BookOpen, ClipboardCheck, User } from "lucide-react";
+import { Home, UserPlus, CheckSquare, FileText, BarChart3, BookOpen, ClipboardCheck, User, Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -9,6 +9,7 @@ const navItems = [
   { to: "/chapters", label: "Chapters Tracking", icon: BookOpen },
   { to: "/tests", label: "Tests", icon: ClipboardCheck },
   { to: "/student-report", label: "Student Report", icon: User },
+  { to: "/ai-insights", label: "AI Insights", icon: Brain },
   { to: "/records", label: "View Records", icon: FileText },
   { to: "/summary", label: "Summary", icon: BarChart3 },
 ];

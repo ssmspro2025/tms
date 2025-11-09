@@ -14,6 +14,41 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_summaries: {
+        Row: {
+          created_at: string
+          generated_on: string
+          id: string
+          student_id: string
+          summary_text: string
+          summary_type: string
+        }
+        Insert: {
+          created_at?: string
+          generated_on?: string
+          id?: string
+          student_id: string
+          summary_text: string
+          summary_type: string
+        }
+        Update: {
+          created_at?: string
+          generated_on?: string
+          id?: string
+          student_id?: string
+          summary_text?: string
+          summary_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_summaries_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       attendance: {
         Row: {
           created_at: string
@@ -191,29 +226,35 @@ export type Database = {
       }
       test_results: {
         Row: {
+          ai_suggested_marks: number | null
           created_at: string
           date_taken: string
           id: string
           marks_obtained: number
           notes: string | null
+          student_answer: string | null
           student_id: string
           test_id: string
         }
         Insert: {
+          ai_suggested_marks?: number | null
           created_at?: string
           date_taken?: string
           id?: string
           marks_obtained: number
           notes?: string | null
+          student_answer?: string | null
           student_id: string
           test_id: string
         }
         Update: {
+          ai_suggested_marks?: number | null
           created_at?: string
           date_taken?: string
           id?: string
           marks_obtained?: number
           notes?: string | null
+          student_answer?: string | null
           student_id?: string
           test_id?: string
         }
