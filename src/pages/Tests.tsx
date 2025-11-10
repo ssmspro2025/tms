@@ -399,6 +399,39 @@ export default function Tests() {
         )}
       </div>
 
+      {selectedTest && selectedTestData && selectedTestData.uploaded_file_url && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Question Paper
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-100">
+                    <FileText className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">Question Paper Available</p>
+                    <p className="text-sm text-gray-600">
+                      Uploaded: {format(new Date(selectedTestData.created_at), "PPP")}
+                    </p>
+                  </div>
+                </div>
+                <QuestionPaperViewer
+                  testId={selectedTest}
+                  testName={selectedTestData.name}
+                  fileName={selectedTestData.uploaded_file_url}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {selectedTest && testResults.length > 0 && (
         <Card>
           <CardHeader>
