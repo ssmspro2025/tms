@@ -248,6 +248,40 @@ const AdminDashboard = () => {
           </Dialog>
         </div>
 
+        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Center</DialogTitle>
+              <DialogDescription>
+                Update center name and address
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="editCenterName">Center Name *</Label>
+                <Input
+                  id="editCenterName"
+                  value={editedCenterData.centerName}
+                  onChange={(e) => setEditedCenterData({ ...editedCenterData, centerName: e.target.value })}
+                  placeholder="Enter center name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editAddress">Address</Label>
+                <Input
+                  id="editAddress"
+                  value={editedCenterData.address}
+                  onChange={(e) => setEditedCenterData({ ...editedCenterData, address: e.target.value })}
+                  placeholder="Enter address"
+                />
+              </div>
+              <Button onClick={handleUpdateCenter} disabled={updateCenterMutation.isPending} className="w-full">
+                {updateCenterMutation.isPending ? 'Updating...' : 'Update Center'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         <Card>
           <CardHeader>
             <CardTitle>All Centers</CardTitle>
