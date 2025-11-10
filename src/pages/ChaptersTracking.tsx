@@ -39,7 +39,7 @@ export default function ChaptersTracking() {
     },
   });
 
-  // Fetch chapters with students
+  // Fetch all chapters taught (history)
   const { data: chapters = [] } = useQuery({
     queryKey: ["chapters", filterSubject, filterStudent],
     queryFn: async () => {
@@ -47,22 +47,47 @@ export default function ChaptersTracking() {
         .from("chapters")
         .select("*, student_chapters(*, students(name, grade))")
         .order("date_taught", { ascending: false });
-      
+
       if (filterSubject !== "all") {
         query = query.eq("subject", filterSubject);
       }
-      
+
       const { data, error } = await query;
       if (error) throw error;
-      
+
       // Filter by student if needed
       if (filterStudent !== "all") {
-        return data.filter(chapter => 
+        return data.filter(chapter =>
           chapter.student_chapters.some((sc: any) => sc.student_id === filterStudent)
         );
       }
-      
+
       return data;
+    },
+  });
+
+  // Fetch unique chapters (master list) for selection
+  const { data: uniqueChapters = [] } = useQuery({
+    queryKey: ["unique-chapters"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("chapters")
+        .select("id, subject, chapter_name")
+        .order("subject, chapter_name");
+
+      if (error) throw error;
+
+      // Remove duplicates by creating a map
+      const seen = new Set<string>();
+      const unique = [];
+      for (const chapter of data) {
+        const key = `${chapter.subject}|${chapter.chapter_name}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          unique.push(chapter);
+        }
+      }
+      return unique;
     },
   });
 
