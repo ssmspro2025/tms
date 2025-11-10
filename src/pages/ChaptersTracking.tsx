@@ -94,49 +94,76 @@ export default function ChaptersTracking() {
   // Add chapter mutation with multi-student support
   const addChapterMutation = useMutation({
     mutationFn: async () => {
-      // First, create the chapter
-      const { data: chapterData, error: chapterError } = await supabase
-        .from("chapters")
-        .insert({
-          subject,
-          chapter_name: chapterName,
-          date_taught: date,
-          notes: notes || null,
-        })
-        .select()
-        .single();
-      
-      if (chapterError) throw chapterError;
-      
-      // Then, link to selected students
+      let chapterId: string;
+
+      if (isCreatingNew) {
+        // Create new chapter
+        const { data: chapterData, error: chapterError } = await supabase
+          .from("chapters")
+          .insert({
+            subject,
+            chapter_name: chapterName,
+            date_taught: date,
+            notes: notes || null,
+          })
+          .select()
+          .single();
+
+        if (chapterError) throw chapterError;
+        chapterId = chapterData.id;
+      } else if (selectedChapterId) {
+        // Use selected chapter - create a new instance with the selected date
+        const selectedChapter = uniqueChapters.find(c => c.id === selectedChapterId);
+        if (!selectedChapter) throw new Error("Chapter not found");
+
+        const { data: chapterData, error: chapterError } = await supabase
+          .from("chapters")
+          .insert({
+            subject: selectedChapter.subject,
+            chapter_name: selectedChapter.chapter_name,
+            date_taught: date,
+            notes: notes || null,
+          })
+          .select()
+          .single();
+
+        if (chapterError) throw chapterError;
+        chapterId = chapterData.id;
+      } else {
+        throw new Error("Please select a chapter or create a new one");
+      }
+
+      // Link to selected students
       const studentChapters = selectedStudentIds.map(studentId => ({
         student_id: studentId,
-        chapter_id: chapterData.id,
+        chapter_id: chapterId,
         completed: true,
         date_completed: date,
       }));
-      
+
       const { error: linkError } = await supabase
         .from("student_chapters")
         .insert(studentChapters);
-      
+
       if (linkError) throw linkError;
-      
-      return chapterData;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
+      queryClient.invalidateQueries({ queryKey: ["unique-chapters"] });
       toast.success("Chapter recorded for selected students");
       setSelectedStudentIds([]);
       setSubject("");
       setChapterName("");
       setNotes("");
+      setSelectedChapterId("");
+      setIsCreatingNew(false);
+      setIsDialogOpen(false);
     },
     onError: (error: any) => {
       if (error.code === "23505") {
-        toast.error("Chapter already assigned to one or more selected students");
+        toast.error("Chapter already assigned to one or more selected students on this date");
       } else {
-        toast.error("Failed to record chapter");
+        toast.error(error.message || "Failed to record chapter");
       }
     },
   });
