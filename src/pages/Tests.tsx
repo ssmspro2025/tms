@@ -82,18 +82,18 @@ export default function Tests() {
   // Create test mutation
   const createTestMutation = useMutation({
     mutationFn: async () => {
-      let fileUrl = null;
-      
+      let uploadedFileUrl = null;
+
       // Upload file if present
       if (uploadedFile) {
         const fileExt = uploadedFile.name.split(".").pop();
-        const fileName = `${Date.now()}.${fileExt}`;
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
         const { error: uploadError } = await supabase.storage
           .from("test-files")
           .upload(fileName, uploadedFile);
-        
+
         if (uploadError) throw uploadError;
-        fileUrl = fileName;
+        uploadedFileUrl = fileName;
       }
 
       const { data, error } = await supabase.from("tests").insert({
@@ -102,8 +102,9 @@ export default function Tests() {
         date: testDate,
         total_marks: parseInt(totalMarks),
         grade: grade || null,
+        uploaded_file_url: uploadedFileUrl,
       }).select().single();
-      
+
       if (error) throw error;
       return data;
     },
@@ -117,7 +118,8 @@ export default function Tests() {
       setGrade("");
       setUploadedFile(null);
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Error creating test:", error);
       toast.error("Failed to create test");
     },
   });
