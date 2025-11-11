@@ -1,13 +1,25 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.80.0';
 
-// Helper function to hash password using native crypto
+let bcrypt: any;
+
+// Helper function to hash password using bcrypt
 async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  if (!bcrypt) {
+    try {
+      bcrypt = await import('bcrypt');
+    } catch (error) {
+      console.warn('bcrypt failed to load, falling back to bcryptjs', error);
+      try {
+        bcrypt = await import('npm:bcryptjs@2.4.3');
+      } catch (e) {
+        console.error('Failed to import bcrypt or bcryptjs:', e);
+        throw new Error('Password hashing failed');
+      }
+    }
+  }
+  const saltRounds = 10;
+  return await bcrypt.hash(password, saltRounds);
 }
 
 const corsHeaders = {
