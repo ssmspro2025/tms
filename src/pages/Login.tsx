@@ -26,19 +26,7 @@ const Login = () => {
         title: 'Login successful',
         description: 'Welcome back!',
       });
-      // Get the user that was just set by login
-      const storedUser = localStorage.getItem('auth_user');
-      if (storedUser) {
-        const userData = JSON.parse(storedUser);
-        // Redirect to admin dashboard if admin, otherwise to center dashboard
-        if (userData.role === 'admin') {
-          navigate('/admin-dashboard');
-        } else {
-          navigate('/');
-        }
-      } else {
-        navigate('/');
-      }
+      navigate('/');
     } else {
       toast({
         title: 'Login failed',

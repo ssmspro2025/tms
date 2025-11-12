@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +15,6 @@ import { format } from "date-fns";
 
 export default function ChaptersTracking() {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [subject, setSubject] = useState("");
@@ -30,19 +28,12 @@ export default function ChaptersTracking() {
 
   // Fetch students
   const { data: students = [] } = useQuery({
-    queryKey: ["students", user?.center_id],
+    queryKey: ["students"],
     queryFn: async () => {
-      let query = supabase
+      const { data, error } = await supabase
         .from("students")
         .select("*")
         .order("name");
-
-      // Filter by center_id if user is not admin
-      if (user?.role !== 'admin' && user?.center_id) {
-        query = query.eq('center_id', user.center_id);
-      }
-
-      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
@@ -50,17 +41,12 @@ export default function ChaptersTracking() {
 
   // Fetch all chapters taught (history)
   const { data: chapters = [] } = useQuery({
-    queryKey: ["chapters", filterSubject, filterStudent, user?.center_id],
+    queryKey: ["chapters", filterSubject, filterStudent],
     queryFn: async () => {
       let query = supabase
         .from("chapters")
         .select("*, student_chapters(*, students(name, grade))")
         .order("date_taught", { ascending: false });
-
-      // Filter by center_id if user is not admin
-      if (user?.role !== 'admin' && user?.center_id) {
-        query = query.eq('center_id', user.center_id);
-      }
 
       if (filterSubject !== "all") {
         query = query.eq("subject", filterSubject);
@@ -82,19 +68,13 @@ export default function ChaptersTracking() {
 
   // Fetch unique chapters (master list) for selection
   const { data: uniqueChapters = [] } = useQuery({
-    queryKey: ["unique-chapters", user?.center_id],
+    queryKey: ["unique-chapters"],
     queryFn: async () => {
-      let query = supabase
+      const { data, error } = await supabase
         .from("chapters")
         .select("id, subject, chapter_name")
         .order("subject, chapter_name");
 
-      // Filter by center_id if user is not admin
-      if (user?.role !== 'admin' && user?.center_id) {
-        query = query.eq('center_id', user.center_id);
-      }
-
-      const { data, error } = await query;
       if (error) throw error;
 
       // Remove duplicates by creating a map
@@ -125,7 +105,6 @@ export default function ChaptersTracking() {
             chapter_name: chapterName,
             date_taught: date,
             notes: notes || null,
-            center_id: user?.center_id || null,
           })
           .select()
           .single();
@@ -144,7 +123,6 @@ export default function ChaptersTracking() {
             chapter_name: selectedChapter.chapter_name,
             date_taught: date,
             notes: notes || null,
-            center_id: user?.center_id || null,
           })
           .select()
           .single();
