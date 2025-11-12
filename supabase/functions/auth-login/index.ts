@@ -1,11 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.80.0';
-import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
+import * as bcrypt from "https://esm.sh/bcryptjs@2.4.3";
 
 // Helper function to verify password using bcrypt
 async function verifyPassword(password: string, hash: string): Promise<boolean> {
   try {
-    return await bcrypt.compare(password, hash);
+    return bcrypt.compareSync(password, hash);
   } catch (error) {
     console.error('Password verification error:', error);
     return false;
