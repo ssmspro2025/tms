@@ -1,11 +1,20 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.80.0';
-import { compare } from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 
-// Helper function to verify password using bcrypt
+// Helper function to hash password using Web Crypto API
+async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Helper function to verify password
 async function verifyPassword(password: string, hash: string): Promise<boolean> {
   try {
-    return await compare(password, hash);
+    const passwordHash = await hashPassword(password);
+    return passwordHash === hash;
   } catch (error) {
     console.error('Password verification error:', error);
     return false;
