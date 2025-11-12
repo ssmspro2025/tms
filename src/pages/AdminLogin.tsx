@@ -27,7 +27,20 @@ const AdminLogin = () => {
         title: 'Admin login successful',
         description: 'Welcome, administrator!',
       });
-      navigate('/admin-dashboard');
+      // Get the user that was just set by login
+      const storedUser = localStorage.getItem('auth_user');
+      if (storedUser) {
+        const userData = JSON.parse(storedUser);
+        // Only allow admin role to access admin dashboard
+        if (userData.role === 'admin') {
+          navigate('/admin-dashboard');
+        } else {
+          // If somehow a non-admin user logged in via admin login, redirect to center dashboard
+          navigate('/');
+        }
+      } else {
+        navigate('/admin-dashboard');
+      }
     } else {
       toast({
         title: 'Login failed',

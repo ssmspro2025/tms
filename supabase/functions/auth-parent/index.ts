@@ -1,20 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.80.0';
+import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 
-// Helper function to hash password using Web Crypto API
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// Helper function to verify password
+// Helper function to verify password using bcrypt
 async function verifyPassword(password: string, hash: string): Promise<boolean> {
   try {
-    const passwordHash = await hashPassword(password);
-    return passwordHash === hash;
+    return await bcrypt.compare(password, hash);
   } catch (error) {
     console.error('Password verification error:', error);
     return false;
@@ -43,7 +34,7 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-
+    
     if (!supabaseUrl || !supabaseKey) {
       console.error('Missing Supabase environment variables');
       return new Response(
@@ -51,19 +42,20 @@ serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
       );
     }
-
+    
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Fetch user by username
+    // Fetch parent user by username with parent role
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('*, centers(center_name), students(name)')
+      .select('*, students(name, grade)')
       .eq('username', username)
+      .eq('role', 'parent')
       .eq('is_active', true)
       .single();
 
     if (userError || !user) {
-      console.error('User not found:', userError);
+      console.error('Parent user not found:', userError);
       console.log('Attempted username:', username);
       return new Response(
         JSON.stringify({ success: false, error: 'Invalid credentials' }),
@@ -71,12 +63,9 @@ serve(async (req) => {
       );
     }
 
-    console.log('User found:', user.username, 'Role:', user.role);
+    console.log('Parent user found:', user.username, 'Student ID:', user.student_id);
 
     // Verify password
-    const passwordHash = await hashPassword(password);
-    console.log('Generated hash:', passwordHash);
-    console.log('Stored hash:', user.password_hash);
     const passwordMatch = await verifyPassword(password, user.password_hash);
     console.log('Password match result:', passwordMatch);
     
@@ -94,15 +83,14 @@ serve(async (req) => {
       .update({ last_login: new Date().toISOString() })
       .eq('id', user.id);
 
-    // Return user data (excluding password_hash)
+    // Return parent user data (excluding password_hash)
     const userData = {
       id: user.id,
       username: user.username,
       role: user.role,
       center_id: user.center_id,
-      center_name: user.centers?.center_name || null,
       student_id: user.student_id,
-      student_name: user.students?.name || null
+      student_name: user.students?.name || null,
     };
 
     return new Response(
@@ -110,7 +98,7 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error: any) {
-    console.error('Login error:', error);
+    console.error('Parent login error:', error);
     return new Response(
       JSON.stringify({ success: false, error: error.message }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }

@@ -16,6 +16,7 @@ interface AuthContextType {
   loading: boolean;
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  setUser?: (user: User | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -39,7 +40,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: { username, password }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Login error:', error);
+        // Handle specific error cases
+        if (error.message?.includes('Edge Function returned a non-2xx status code')) {
+          return { success: false, error: 'Server is not properly configured. Please ensure environment variables are set in Supabase.' };
+        }
+        throw error;
+      }
 
       if (data.success) {
         const userData = data.user;
@@ -61,7 +69,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, setUser }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,7 +12,6 @@ const ParentLogin = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -21,18 +20,34 @@ const ParentLogin = () => {
     setLoading(true);
 
     try {
-      const result = await login(username, password);
-      
-      if (result.success) {
+      const { data, error } = await supabase.functions.invoke('auth-parent', {
+        body: { username, password }
+      });
+
+      if (error) {
+        console.error('Parent login error:', error);
+        toast({
+          title: 'Login Failed',
+          description: error.message || 'Invalid credentials',
+          variant: 'destructive',
+        });
+        setLoading(false);
+        return;
+      }
+
+      if (data.success) {
+        const userData = data.user;
+        localStorage.setItem('auth_user', JSON.stringify(userData));
         navigate('/parent-dashboard');
       } else {
         toast({
           title: 'Login Failed',
-          description: result.error || 'Invalid credentials',
+          description: data.error || 'Invalid credentials',
           variant: 'destructive',
         });
       }
     } catch (error: any) {
+      console.error('Parent login error:', error);
       toast({
         title: 'Error',
         description: error.message || 'An error occurred during login',

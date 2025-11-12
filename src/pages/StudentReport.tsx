@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 
 export default function StudentReport() {
+  const { user } = useAuth();
   const [selectedStudentId, setSelectedStudentId] = useState<string>("");
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
     from: startOfMonth(new Date()),
@@ -22,12 +24,19 @@ export default function StudentReport() {
 
   // Fetch students
   const { data: students = [] } = useQuery({
-    queryKey: ["students"],
+    queryKey: ["students", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("students")
         .select("*")
         .order("name");
+
+      // Filter by center_id if user is not admin
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
@@ -74,11 +83,18 @@ export default function StudentReport() {
 
   // Fetch all chapters for progress calculation
   const { data: allChapters = [] } = useQuery({
-    queryKey: ["all-chapters"],
+    queryKey: ["all-chapters", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("chapters")
         .select("*");
+
+      // Filter by center_id if user is not admin
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
