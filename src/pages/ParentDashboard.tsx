@@ -6,83 +6,118 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { User, Calendar, BookOpen, FileText, LogOut } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useState } from 'react';
 
 const ParentDashboard = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
 
-  // Redirect if not parent or no student_id
-  if (user?.role !== 'parent' || !user?.student_id) {
+  // 🧭 Redirect if not parent
+  if (user?.role !== 'parent') {
     navigate('/login-parent');
     return null;
   }
 
-  // Fetch student details
-  const { data: student } = useQuery({
-    queryKey: ['student', user.student_id],
+  // 🧩 Handle 1 or multiple children
+  const childIds = Array.isArray(user?.student_ids)
+    ? user.student_ids
+    : user?.student_id
+    ? [user.student_id]
+    : [];
+
+  // If parent has no child linked
+  if (childIds.length === 0) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <p className="text-lg text-muted-foreground">No student linked to this parent account.</p>
+        <Button onClick={() => navigate('/login-parent')} className="mt-4">Back to Login</Button>
+      </div>
+    );
+  }
+
+  // Default to first child
+  const activeChildId = selectedChildId || childIds[0];
+
+  /** 🧩 Fetch children info */
+  const { data: students = [] } = useQuery({
+    queryKey: ['students', childIds],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('students')
         .select('*')
-        .eq('id', user.student_id!)
-        .single();
+        .in('id', childIds);
       if (error) throw error;
       return data;
     },
   });
 
-  // Fetch attendance summary
+  /** 🧩 Fetch attendance */
   const { data: attendance = [] } = useQuery({
-    queryKey: ['attendance', user.student_id],
+    queryKey: ['attendance', activeChildId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('attendance')
         .select('*')
-        .eq('student_id', user.student_id!)
+        .eq('student_id', activeChildId)
         .order('date', { ascending: false });
       if (error) throw error;
       return data;
     },
+    enabled: !!activeChildId,
   });
 
-  // Fetch test results
+  /** 🧩 Fetch test results */
   const { data: testResults = [] } = useQuery({
-    queryKey: ['test-results', user.student_id],
+    queryKey: ['test-results', activeChildId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('test_results')
         .select('*, tests(*)')
-        .eq('student_id', user.student_id!)
+        .eq('student_id', activeChildId)
         .order('date_taken', { ascending: false });
       if (error) throw error;
       return data;
     },
+    enabled: !!activeChildId,
   });
 
-  // Fetch chapters studied
+  /** 🧩 Fetch chapters studied */
   const { data: chapters = [] } = useQuery({
-    queryKey: ['chapters-studied', user.student_id],
+    queryKey: ['student_chapters', activeChildId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('chapters_studied')
-        .select('*')
-        .eq('student_id', user.student_id!)
-        .order('date', { ascending: false });
+        .from('student_chapters')
+        .select(`
+          id,
+          student_id,
+          chapter_id,
+          completed,
+          date_completed,
+          created_at,
+          chapters (name, subject)
+        `)
+        .eq('student_id', activeChildId)
+        .order('date_completed', { ascending: false });
       if (error) throw error;
       return data;
     },
+    enabled: !!activeChildId,
   });
 
-  // Calculate attendance stats
+  /** 🧩 Attendance statistics */
   const totalDays = attendance.length;
   const presentDays = attendance.filter((a: any) => a.status === 'Present').length;
   const absentDays = totalDays - presentDays;
   const attendancePercentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
 
+  /** 🧩 Logout handler */
   const handleLogout = () => {
     logout();
     navigate('/login-parent');
   };
+
+  const activeStudent = students.find((s: any) => s.id === activeChildId);
 
   return (
     <div className="min-h-screen bg-background p-6">
@@ -102,7 +137,25 @@ const ParentDashboard = () => {
           </Button>
         </div>
 
-        {/* Student Info Card */}
+        {/* Child Selector (if multiple) */}
+        {students.length > 1 && (
+          <div className="flex gap-2 items-center">
+            <label className="text-sm font-medium">Select Child:</label>
+            <select
+              className="border border-gray-300 rounded-md p-2 text-sm"
+              value={activeChildId}
+              onChange={(e) => setSelectedChildId(e.target.value)}
+            >
+              {students.map((s: any) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({s.grade})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Student Info */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -111,25 +164,27 @@ const ParentDashboard = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {student && (
+            {activeStudent ? (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Name</p>
-                  <p className="font-semibold">{student.name}</p>
+                  <p className="font-semibold">{activeStudent.name}</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Grade</p>
-                  <p className="font-semibold">{student.grade}</p>
+                  <p className="font-semibold">{activeStudent.grade}</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">School</p>
-                  <p className="font-semibold">{student.school_name}</p>
+                  <p className="font-semibold">{activeStudent.school_name}</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Contact</p>
-                  <p className="font-semibold">{student.contact_number}</p>
+                  <p className="font-semibold">{activeStudent.contact_number}</p>
                 </div>
               </div>
+            ) : (
+              <p className="text-muted-foreground">Loading student info...</p>
             )}
           </CardContent>
         </Card>
@@ -194,7 +249,7 @@ const ParentDashboard = () => {
                 </TableHeader>
                 <TableBody>
                   {testResults.map((result: any) => {
-                    const percentage = result.tests?.total_marks 
+                    const percentage = result.tests?.total_marks
                       ? Math.round((result.marks_obtained / result.tests.total_marks) * 100)
                       : 0;
                     return (
@@ -206,11 +261,15 @@ const ParentDashboard = () => {
                           {result.marks_obtained}/{result.tests?.total_marks || 0}
                         </TableCell>
                         <TableCell>
-                          <span className={`font-semibold ${
-                            percentage >= 75 ? 'text-green-600' : 
-                            percentage >= 50 ? 'text-yellow-600' : 
-                            'text-red-600'
-                          }`}>
+                          <span
+                            className={`font-semibold ${
+                              percentage >= 75
+                                ? 'text-green-600'
+                                : percentage >= 50
+                                ? 'text-yellow-600'
+                                : 'text-red-600'
+                            }`}
+                          >
                             {percentage}%
                           </span>
                         </TableCell>
@@ -223,7 +282,7 @@ const ParentDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Chapters Studied */}
+        {/* ✅ Chapters Studied — Secure */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -240,17 +299,27 @@ const ParentDashboard = () => {
                   <TableRow>
                     <TableHead>Subject</TableHead>
                     <TableHead>Chapter Name</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Notes</TableHead>
+                    <TableHead>Date Completed</TableHead>
+                    <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {chapters.map((chapter: any) => (
                     <TableRow key={chapter.id}>
-                      <TableCell className="font-medium">{chapter.subject}</TableCell>
-                      <TableCell>{chapter.chapter_name}</TableCell>
-                      <TableCell>{new Date(chapter.date).toLocaleDateString()}</TableCell>
-                      <TableCell>{chapter.notes || '-'}</TableCell>
+                      <TableCell className="font-medium">{chapter.chapters?.subject || '-'}</TableCell>
+                      <TableCell>{chapter.chapters?.name || chapter.chapter_id}</TableCell>
+                      <TableCell>
+                        {chapter.date_completed
+                          ? new Date(chapter.date_completed).toLocaleDateString()
+                          : '-'}
+                      </TableCell>
+                      <TableCell>
+                        {chapter.completed ? (
+                          <span className="text-green-600 font-semibold">✅ Completed</span>
+                        ) : (
+                          <span className="text-yellow-600 font-semibold">⏳ Pending</span>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
