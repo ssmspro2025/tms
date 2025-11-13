@@ -1,15 +1,34 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { toast } from "sonner";
 import { Pencil, Trash2, Save, X, UserPlus } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface Student {
   id: string;
@@ -24,12 +43,13 @@ interface Student {
 interface StudentFee {
   joiningDate: string;
   monthlyFee: number;
-  paid: boolean;
+  paid: Record<string, boolean>; // key = month in YYYY-MM format
 }
 
 export default function RegisterStudent() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+
   const [formData, setFormData] = useState({
     name: "",
     grade: "",
@@ -37,25 +57,28 @@ export default function RegisterStudent() {
     parent_name: "",
     contact_number: "",
     joiningDate: "",
-    monthlyFee: "",
+    monthlyFee: 0,
   });
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Student | null>(null);
+
+  // store frontend-only fee info
+  const [studentFees, setStudentFees] = useState<Record<string, StudentFee>>({});
+
   const [isCreatingParent, setIsCreatingParent] = useState(false);
-  const [selectedStudentForParent, setSelectedStudentForParent] = useState<Student | null>(null);
+  const [selectedStudentForParent, setSelectedStudentForParent] =
+    useState<Student | null>(null);
   const [parentUsername, setParentUsername] = useState("");
   const [parentPassword, setParentPassword] = useState("");
 
-  // State for fee tracking
-  const [studentFees, setStudentFees] = useState<Record<string, StudentFee>>({});
-
+  // fetch students
   const { data: students, isLoading } = useQuery({
     queryKey: ["students", user?.center_id],
     queryFn: async () => {
-      let query = supabase
-        .from("students")
-        .select("*")
-        .order("created_at", { ascending: false });
+      let query = supabase.from("students").select("*").order("created_at", {
+        ascending: false,
+      });
       if (user?.role !== "admin" && user?.center_id) {
         query = query.eq("center_id", user.center_id);
       }
@@ -65,27 +88,33 @@ export default function RegisterStudent() {
     },
   });
 
+  // CREATE student
   const createMutation = useMutation({
     mutationFn: async (student: typeof formData) => {
-      const { error } = await supabase.from("students").insert([{
-        ...student,
-        center_id: user?.center_id
-      }]);
+      const { data, error } = await supabase.from("students").insert([
+        {
+          name: student.name,
+          grade: student.grade,
+          school_name: student.school_name,
+          parent_name: student.parent_name,
+          contact_number: student.contact_number,
+          center_id: user?.center_id,
+        },
+      ]).select().single();
       if (error) throw error;
+      return data;
     },
-    onSuccess: () => {
+    onSuccess: (newStudent: Student) => {
+      // set the frontend-only fee info
+      setStudentFees((prev) => ({
+        ...prev,
+        [newStudent.id]: {
+          joiningDate: formData.joiningDate,
+          monthlyFee: formData.monthlyFee,
+          paid: {}, // start empty
+        },
+      }));
       queryClient.invalidateQueries({ queryKey: ["students", user?.center_id] });
-      if (students?.length !== undefined) {
-        const lastStudent = students[0];
-        setStudentFees((prev) => ({
-          ...prev,
-          [lastStudent?.id || formData.name]: {
-            joiningDate: formData.joiningDate,
-            monthlyFee: Number(formData.monthlyFee),
-            paid: false,
-          },
-        }));
-      }
       setFormData({
         name: "",
         grade: "",
@@ -93,7 +122,7 @@ export default function RegisterStudent() {
         parent_name: "",
         contact_number: "",
         joiningDate: "",
-        monthlyFee: "",
+        monthlyFee: 0,
       });
       toast.success("Student registered successfully!");
     },
@@ -102,6 +131,7 @@ export default function RegisterStudent() {
     },
   });
 
+  // UPDATE student
   const updateMutation = useMutation({
     mutationFn: async (student: Student) => {
       const { error } = await supabase
@@ -127,18 +157,19 @@ export default function RegisterStudent() {
     },
   });
 
+  // DELETE student
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from("students").delete().eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["students", user?.center_id] });
       setStudentFees((prev) => {
-        const copy = { ...prev };
-        delete copy[id];
-        return copy;
+        const newFees = { ...prev };
+        delete newFees[editingId || ""];
+        return newFees;
       });
+      queryClient.invalidateQueries({ queryKey: ["students", user?.center_id] });
       toast.success("Student deleted successfully!");
     },
     onError: () => {
@@ -167,59 +198,45 @@ export default function RegisterStudent() {
     setEditData(null);
   };
 
-  const toggleFeePaid = (studentId: string) => {
+  // For fee fields
+  const handleFeeChange = (
+    studentId: string,
+    feeData: Partial<StudentFee>
+  ) => {
     setStudentFees((prev) => ({
       ...prev,
       [studentId]: {
         ...prev[studentId],
-        paid: !prev[studentId].paid,
+        ...feeData,
       },
     }));
   };
 
-  // Parent account mutation
-  const createParentMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedStudentForParent) return;
-      const { data, error } = await supabase.functions.invoke("create-parent-account", {
-        body: {
-          username: parentUsername,
-          password: parentPassword,
-          studentId: selectedStudentForParent.id,
-          centerId: user?.center_id,
-        },
-      });
-      if (error) throw error;
-      if (!data.success) throw new Error(data.error);
-      return data;
-    },
-    onSuccess: () => {
-      toast.success("Parent account created successfully");
-      setIsCreatingParent(false);
-      setSelectedStudentForParent(null);
-      setParentUsername("");
-      setParentPassword("");
-    },
-    onError: (error: any) => {
-      toast.error(error.message || "Failed to create parent account");
-    },
-  });
+  // Generate months from joining date
+  const generateMonths = (joiningDate: string) => {
+    const months: string[] = [];
+    const start = new Date(joiningDate);
+    const today = new Date();
+    const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
-  const handleCreateParentAccount = (student: Student) => {
-    setSelectedStudentForParent(student);
-    setParentUsername("");
-    setParentPassword("");
-    setIsCreatingParent(true);
+    let dt = new Date(start.getFullYear(), start.getMonth(), 1);
+    while (dt <= currentMonth) {
+      months.push(`${dt.getFullYear()}-${(dt.getMonth() + 1).toString().padStart(2, "0")}`);
+      dt.setMonth(dt.getMonth() + 1);
+    }
+    return months;
   };
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-3xl font-bold tracking-tight">Register Student</h2>
-        <p className="text-muted-foreground">Add new students to the attendance system</p>
+        <p className="text-muted-foreground">
+          Add new students to the attendance system
+        </p>
       </div>
 
-      {/* Student Form */}
+      {/* REGISTER FORM */}
       <Card>
         <CardHeader>
           <CardTitle>Student Information</CardTitle>
@@ -230,39 +247,98 @@ export default function RegisterStudent() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="name">Full Name *</Label>
-                <Input id="name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) =>
+                    setFormData({ ...formData, name: e.target.value })
+                  }
+                  required
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="grade">Grade *</Label>
-                <Input id="grade" value={formData.grade} onChange={(e) => setFormData({ ...formData, grade: e.target.value })} required />
+                <Input
+                  id="grade"
+                  value={formData.grade}
+                  onChange={(e) =>
+                    setFormData({ ...formData, grade: e.target.value })
+                  }
+                  required
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="school_name">School Name *</Label>
-                <Input id="school_name" value={formData.school_name} onChange={(e) => setFormData({ ...formData, school_name: e.target.value })} required />
+                <Input
+                  id="school_name"
+                  value={formData.school_name}
+                  onChange={(e) =>
+                    setFormData({ ...formData, school_name: e.target.value })
+                  }
+                  required
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="parent_name">Parent's Name *</Label>
-                <Input id="parent_name" value={formData.parent_name} onChange={(e) => setFormData({ ...formData, parent_name: e.target.value })} required />
+                <Input
+                  id="parent_name"
+                  value={formData.parent_name}
+                  onChange={(e) =>
+                    setFormData({ ...formData, parent_name: e.target.value })
+                  }
+                  required
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="contact_number">Contact Number *</Label>
-                <Input id="contact_number" value={formData.contact_number} onChange={(e) => setFormData({ ...formData, contact_number: e.target.value })} required />
+                <Input
+                  id="contact_number"
+                  value={formData.contact_number}
+                  onChange={(e) =>
+                    setFormData({ ...formData, contact_number: e.target.value })
+                  }
+                  required
+                />
               </div>
+
+              {/* NEW FIELDS */}
               <div className="space-y-2">
                 <Label htmlFor="joiningDate">Joining Date *</Label>
-                <Input type="date" id="joiningDate" value={formData.joiningDate} onChange={(e) => setFormData({ ...formData, joiningDate: e.target.value })} required />
+                <Input
+                  id="joiningDate"
+                  type="date"
+                  value={formData.joiningDate}
+                  onChange={(e) =>
+                    setFormData({ ...formData, joiningDate: e.target.value })
+                  }
+                  required
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="monthlyFee">Monthly Fee *</Label>
-                <Input type="number" id="monthlyFee" value={formData.monthlyFee} onChange={(e) => setFormData({ ...formData, monthlyFee: e.target.value })} required />
+                <Input
+                  id="monthlyFee"
+                  type="number"
+                  value={formData.monthlyFee}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      monthlyFee: Number(e.target.value),
+                    })
+                  }
+                  required
+                />
               </div>
             </div>
-            <Button type="submit" className="w-full md:w-auto">Register Student</Button>
+
+            <Button type="submit" className="w-full md:w-auto">
+              Register Student
+            </Button>
           </form>
         </CardContent>
       </Card>
 
-      {/* Registered Students Table */}
+      {/* REGISTERED STUDENTS TABLE */}
       <Card>
         <CardHeader>
           <CardTitle>Registered Students</CardTitle>
@@ -284,54 +360,192 @@ export default function RegisterStudent() {
                     <TableHead>Joining Date</TableHead>
                     <TableHead>Monthly Fee</TableHead>
                     <TableHead>Paid</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead className="text-right" style={{ minWidth: '200px' }}>
+                      Actions
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {students.map((student) => (
-                    <TableRow key={student.id}>
-                      {editingId === student.id && editData ? (
-                        <>
-                          <TableCell><Input value={editData.name} onChange={(e) => setEditData({ ...editData, name: e.target.value })} /></TableCell>
-                          <TableCell><Input value={editData.grade} onChange={(e) => setEditData({ ...editData, grade: e.target.value })} /></TableCell>
-                          <TableCell><Input value={editData.school_name} onChange={(e) => setEditData({ ...editData, school_name: e.target.value })} /></TableCell>
-                          <TableCell><Input value={editData.parent_name} onChange={(e) => setEditData({ ...editData, parent_name: e.target.value })} /></TableCell>
-                          <TableCell><Input value={editData.contact_number} onChange={(e) => setEditData({ ...editData, contact_number: e.target.value })} /></TableCell>
-                          <TableCell>{studentFees[student.id]?.joiningDate || '-'}</TableCell>
-                          <TableCell>{studentFees[student.id]?.monthlyFee || '-'}</TableCell>
-                          <TableCell>
-                            <input type="checkbox" checked={studentFees[student.id]?.paid || false} onChange={() => toggleFeePaid(student.id)} />
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button size="sm" onClick={handleSave}><Save className="h-4 w-4" /></Button>
-                              <Button size="sm" variant="outline" onClick={handleCancel}><X className="h-4 w-4" /></Button>
-                            </div>
-                          </TableCell>
-                        </>
-                      ) : (
-                        <>
-                          <TableCell>{student.name}</TableCell>
-                          <TableCell>{student.grade}</TableCell>
-                          <TableCell>{student.school_name}</TableCell>
-                          <TableCell>{student.parent_name}</TableCell>
-                          <TableCell>{student.contact_number}</TableCell>
-                          <TableCell>{studentFees[student.id]?.joiningDate || '-'}</TableCell>
-                          <TableCell>{studentFees[student.id]?.monthlyFee || '-'}</TableCell>
-                          <TableCell>
-                            <input type="checkbox" checked={studentFees[student.id]?.paid || false} onChange={() => toggleFeePaid(student.id)} />
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button size="sm" variant="outline" onClick={() => handleEdit(student)} title="Edit student"><Pencil className="h-4 w-4" /></Button>
-                              <Button size="sm" variant="secondary" onClick={() => handleCreateParentAccount(student)} title="Create parent login"><UserPlus className="h-4 w-4" /></Button>
-                              <Button size="sm" variant="destructive" onClick={() => deleteMutation.mutate(student.id)} title="Delete student"><Trash2 className="h-4 w-4" /></Button>
-                            </div>
-                          </TableCell>
-                        </>
-                      )}
-                    </TableRow>
-                  ))}
+                  {students.map((student) => {
+                    const feeInfo = studentFees[student.id];
+                    const months =
+                      feeInfo?.joiningDate && generateMonths(feeInfo.joiningDate);
+
+                    return (
+                      <TableRow key={student.id}>
+                        {editingId === student.id && editData ? (
+                          <>
+                            <TableCell>
+                              <Input
+                                value={editData.name}
+                                onChange={(e) =>
+                                  setEditData({ ...editData, name: e.target.value })
+                                }
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                value={editData.grade}
+                                onChange={(e) =>
+                                  setEditData({ ...editData, grade: e.target.value })
+                                }
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                value={editData.school_name}
+                                onChange={(e) =>
+                                  setEditData({
+                                    ...editData,
+                                    school_name: e.target.value,
+                                  })
+                                }
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                value={editData.parent_name}
+                                onChange={(e) =>
+                                  setEditData({
+                                    ...editData,
+                                    parent_name: e.target.value,
+                                  })
+                                }
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                value={editData.contact_number}
+                                onChange={(e) =>
+                                  setEditData({
+                                    ...editData,
+                                    contact_number: e.target.value,
+                                  })
+                                }
+                              />
+                            </TableCell>
+
+                            <TableCell>
+                              <Input
+                                type="date"
+                                value={feeInfo?.joiningDate || ""}
+                                onChange={(e) =>
+                                  handleFeeChange(student.id, {
+                                    joiningDate: e.target.value,
+                                  })
+                                }
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                type="number"
+                                value={feeInfo?.monthlyFee || 0}
+                                onChange={(e) =>
+                                  handleFeeChange(student.id, {
+                                    monthlyFee: Number(e.target.value),
+                                  })
+                                }
+                              />
+                            </TableCell>
+                            <TableCell>
+                              {months?.map((month) => (
+                                <div key={month}>
+                                  <Label className="flex items-center gap-2">
+                                    <Input
+                                      type="checkbox"
+                                      checked={feeInfo?.paid?.[month] || false}
+                                      onChange={(e) =>
+                                        handleFeeChange(student.id, {
+                                          paid: {
+                                            ...feeInfo?.paid,
+                                            [month]: e.target.checked,
+                                          },
+                                        })
+                                      }
+                                    />
+                                    {month}
+                                  </Label>
+                                </div>
+                              ))}
+                            </TableCell>
+
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                <Button size="sm" onClick={handleSave}>
+                                  <Save className="h-4 w-4" />
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={handleCancel}>
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </>
+                        ) : (
+                          <>
+                            <TableCell className="font-medium">{student.name}</TableCell>
+                            <TableCell>{student.grade}</TableCell>
+                            <TableCell>{student.school_name}</TableCell>
+                            <TableCell>{student.parent_name}</TableCell>
+                            <TableCell>{student.contact_number}</TableCell>
+                            <TableCell>{feeInfo?.joiningDate || '-'}</TableCell>
+                            <TableCell>{feeInfo?.monthlyFee || '-'}</TableCell>
+                            <TableCell>
+                              {months?.map((month) => (
+                                <div key={month}>
+                                  <Label className="flex items-center gap-2">
+                                    <Input
+                                      type="checkbox"
+                                      checked={feeInfo?.paid?.[month] || false}
+                                      onChange={(e) =>
+                                        handleFeeChange(student.id, {
+                                          paid: {
+                                            ...feeInfo?.paid,
+                                            [month]: e.target.checked,
+                                          },
+                                        })
+                                      }
+                                    />
+                                    {month}
+                                  </Label>
+                                </div>
+                              ))}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleEdit(student)}
+                                  title="Edit student"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => {
+                                    setSelectedStudentForParent(student);
+                                    setIsCreatingParent(true);
+                                  }}
+                                  title="Create parent login"
+                                >
+                                  <UserPlus className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => deleteMutation.mutate(student.id)}
+                                  title="Delete student"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </>
+                        )}
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -341,24 +555,43 @@ export default function RegisterStudent() {
         </CardContent>
       </Card>
 
-      {/* Parent Account Dialog */}
+      {/* Parent Account Creation Dialog */}
       <Dialog open={isCreatingParent} onOpenChange={setIsCreatingParent}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create Parent Login</DialogTitle>
-            <DialogDescription>Create login credentials for {selectedStudentForParent?.name}'s parent</DialogDescription>
+            <DialogDescription>
+              Create login credentials for {selectedStudentForParent?.name}'s parent
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="parent-username">Username (Email or Phone) *</Label>
-              <Input id="parent-username" value={parentUsername} onChange={(e) => setParentUsername(e.target.value)} placeholder="parent@email.com or 9841234567" />
+              <Input
+                id="parent-username"
+                value={parentUsername}
+                onChange={(e) => setParentUsername(e.target.value)}
+                placeholder="parent@email.com or 9841234567"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="parent-password">Temporary Password *</Label>
-              <Input type="password" id="parent-password" value={parentPassword} onChange={(e) => setParentPassword(e.target.value)} placeholder="Enter temporary password" />
+              <Input
+                id="parent-password"
+                type="password"
+                value={parentPassword}
+                onChange={(e) => setParentPassword(e.target.value)}
+                placeholder="Enter temporary password"
+              />
             </div>
-            <Button onClick={() => createParentMutation.mutate()} disabled={!parentUsername || !parentPassword || createParentMutation.isPending} className="w-full">
-              {createParentMutation.isPending ? "Creating..." : "Create Parent Account"}
+            <Button
+              onClick={() => {
+                // call your parent account function
+              }}
+              disabled={!parentUsername || !parentPassword}
+              className="w-full"
+            >
+              Create Parent Account
             </Button>
           </div>
         </DialogContent>
