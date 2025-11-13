@@ -17,7 +17,7 @@ const ParentDashboard = () => {
     return null;
   }
 
-  /** 🧩 Fetch student details */
+  // Fetch student details
   const { data: student } = useQuery({
     queryKey: ['student', user.student_id],
     queryFn: async () => {
@@ -31,7 +31,7 @@ const ParentDashboard = () => {
     },
   });
 
-  /** 🧩 Fetch attendance summary */
+  // Fetch attendance summary
   const { data: attendance = [] } = useQuery({
     queryKey: ['attendance', user.student_id],
     queryFn: async () => {
@@ -45,7 +45,7 @@ const ParentDashboard = () => {
     },
   });
 
-  /** 🧩 Fetch test results */
+  // Fetch test results
   const { data: testResults = [] } = useQuery({
     queryKey: ['test-results', user.student_id],
     queryFn: async () => {
@@ -59,35 +59,26 @@ const ParentDashboard = () => {
     },
   });
 
-  /** 🧩 Fetch chapters studied */
+  // Fetch chapters studied
   const { data: chapters = [] } = useQuery({
-    queryKey: ['student_chapters', user.student_id],
+    queryKey: ['chapters-studied', user.student_id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('student_chapters')
-        .select(`
-          id,
-          student_id,
-          chapter_id,
-          completed,
-          date_completed,
-          created_at,
-          chapters (name, subject)
-        `)
+        .from('chapters_studied')
+        .select('*')
         .eq('student_id', user.student_id!)
-        .order('date_completed', { ascending: false });
+        .order('date', { ascending: false });
       if (error) throw error;
       return data;
     },
   });
 
-  /** 🧩 Attendance statistics */
+  // Calculate attendance stats
   const totalDays = attendance.length;
   const presentDays = attendance.filter((a: any) => a.status === 'Present').length;
   const absentDays = totalDays - presentDays;
   const attendancePercentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
 
-  /** 🧩 Logout handler */
   const handleLogout = () => {
     logout();
     navigate('/login-parent');
@@ -111,7 +102,7 @@ const ParentDashboard = () => {
           </Button>
         </div>
 
-        {/* Student Info */}
+        {/* Student Info Card */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -203,7 +194,7 @@ const ParentDashboard = () => {
                 </TableHeader>
                 <TableBody>
                   {testResults.map((result: any) => {
-                    const percentage = result.tests?.total_marks
+                    const percentage = result.tests?.total_marks 
                       ? Math.round((result.marks_obtained / result.tests.total_marks) * 100)
                       : 0;
                     return (
@@ -215,15 +206,11 @@ const ParentDashboard = () => {
                           {result.marks_obtained}/{result.tests?.total_marks || 0}
                         </TableCell>
                         <TableCell>
-                          <span
-                            className={`font-semibold ${
-                              percentage >= 75
-                                ? 'text-green-600'
-                                : percentage >= 50
-                                ? 'text-yellow-600'
-                                : 'text-red-600'
-                            }`}
-                          >
+                          <span className={`font-semibold ${
+                            percentage >= 75 ? 'text-green-600' : 
+                            percentage >= 50 ? 'text-yellow-600' : 
+                            'text-red-600'
+                          }`}>
                             {percentage}%
                           </span>
                         </TableCell>
@@ -236,7 +223,7 @@ const ParentDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* ✅ Chapters Studied — FIXED */}
+        {/* Chapters Studied */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -253,27 +240,17 @@ const ParentDashboard = () => {
                   <TableRow>
                     <TableHead>Subject</TableHead>
                     <TableHead>Chapter Name</TableHead>
-                    <TableHead>Date Completed</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Notes</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {chapters.map((chapter: any) => (
                     <TableRow key={chapter.id}>
-                      <TableCell className="font-medium">{chapter.chapters?.subject || '-'}</TableCell>
-                      <TableCell>{chapter.chapters?.name || chapter.chapter_id}</TableCell>
-                      <TableCell>
-                        {chapter.date_completed
-                          ? new Date(chapter.date_completed).toLocaleDateString()
-                          : '-'}
-                      </TableCell>
-                      <TableCell>
-                        {chapter.completed ? (
-                          <span className="text-green-600 font-semibold">✅ Completed</span>
-                        ) : (
-                          <span className="text-yellow-600 font-semibold">⏳ Pending</span>
-                        )}
-                      </TableCell>
+                      <TableCell className="font-medium">{chapter.subject}</TableCell>
+                      <TableCell>{chapter.chapter_name}</TableCell>
+                      <TableCell>{new Date(chapter.date).toLocaleDateString()}</TableCell>
+                      <TableCell>{chapter.notes || '-'}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
