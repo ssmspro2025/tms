@@ -384,22 +384,37 @@ export default function StudentReport() {
                   {chapterProgress.map((progress) => (
                     <div
                       key={progress.id}
-                      className="flex items-center justify-between p-3 border rounded-lg"
+                      className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
                     >
-                      <div className="flex-1">
-                        <p className="font-medium">{progress.chapters?.chapter_name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {progress.chapters?.subject} • {format(new Date(progress.date_completed), "PPP")}
-                        </p>
+                      <div className="flex items-start gap-3 flex-1">
+                        <Checkbox
+                          id={progress.id}
+                          checked={progress.completed}
+                          onCheckedChange={() => toggleCompletionMutation.mutate(progress.id)}
+                          disabled={toggleCompletionMutation.isPending}
+                        />
+                        <div className="flex-1">
+                          <label htmlFor={progress.id} className="font-medium cursor-pointer">
+                            {progress.chapters?.chapter_name}
+                          </label>
+                          <p className="text-sm text-muted-foreground">
+                            {progress.chapters?.subject} • {format(new Date(progress.date_completed), "PPP")}
+                          </p>
+                          {progress.completed && progress.completed_on && (
+                            <p className="text-xs text-green-600 mt-1">
+                              Marked complete on {format(new Date(progress.completed_on), "PPP")}
+                            </p>
+                          )}
+                        </div>
                       </div>
                       <div
-                        className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        className={`px-3 py-1 rounded-full text-xs font-medium ml-2 ${
                           progress.completed
                             ? "bg-green-100 text-green-800"
                             : "bg-yellow-100 text-yellow-800"
                         }`}
                       >
-                        {progress.completed ? "Completed" : "In Progress"}
+                        {progress.completed ? "✓ Completed" : "In Progress"}
                       </div>
                     </div>
                   ))}
