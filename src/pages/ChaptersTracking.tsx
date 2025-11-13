@@ -49,12 +49,16 @@ export default function ChaptersTracking() {
 
   // Fetch all chapters taught (history)
   const { data: chapters = [] } = useQuery({
-    queryKey: ["chapters", filterSubject, filterStudent],
+    queryKey: ["chapters", filterSubject, filterStudent, user?.center_id],
     queryFn: async () => {
       let query = supabase
         .from("chapters")
         .select("*, student_chapters(*, students(name, grade))")
         .order("date_taught", { ascending: false });
+
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq("center_id", user.center_id);
+      }
 
       if (filterSubject !== "all") {
         query = query.eq("subject", filterSubject);
@@ -76,12 +80,18 @@ export default function ChaptersTracking() {
 
   // Fetch unique chapters (master list) for selection
   const { data: uniqueChapters = [] } = useQuery({
-    queryKey: ["unique-chapters"],
+    queryKey: ["unique-chapters", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("chapters")
         .select("id, subject, chapter_name")
         .order("subject, chapter_name");
+
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq("center_id", user.center_id);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 
