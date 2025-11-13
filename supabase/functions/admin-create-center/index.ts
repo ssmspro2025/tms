@@ -1,14 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.80.0';
-
-// Helper function to hash password using native crypto
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
+import * as bcrypt from "https://deno.land/x/bcrypt/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -62,7 +54,7 @@ serve(async (req) => {
     if (centerError) throw centerError;
 
     // Hash password
-    const passwordHash = await hashPassword(password);
+    const passwordHash = bcrypt.hashSync(password, 10);
 
     // Create user
     const { data: user, error: userError } = await supabase
