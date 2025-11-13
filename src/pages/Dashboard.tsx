@@ -2,61 +2,35 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, CheckCircle2, XCircle, TrendingUp } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
 import { format } from "date-fns";
 
 export default function Dashboard() {
-  const { user } = useAuth();
   const today = format(new Date(), "yyyy-MM-dd");
 
-  // Students count for the user's center
   const { data: studentsCount } = useQuery({
-    queryKey: ["students-count", user?.center_id],
+    queryKey: ["students-count"],
     queryFn: async () => {
-      let query = supabase.from("students").select("*", { count: "exact", head: true });
-      if (user?.role !== "admin" && user?.center_id) {
-        query = query.eq("center_id", user.center_id);
-      }
-      const { count, error } = await query;
-      if (error) throw error;
+      const { count } = await supabase
+        .from("students")
+        .select("*", { count: "exact", head: true });
       return count || 0;
     },
   });
 
-  // Today's attendance filtered by user's center
   const { data: todayAttendance } = useQuery({
-    queryKey: ["today-attendance", today, user?.center_id],
+    queryKey: ["today-attendance", today],
     queryFn: async () => {
-      let studentIds: string[] = [];
-
-      // If user is not admin, get student IDs of the center
-      if (user?.role !== "admin" && user?.center_id) {
-        const { data: students, error } = await supabase
-          .from("students")
-          .select("id")
-          .eq("center_id", user.center_id);
-        if (error) throw error;
-        studentIds = students?.map((s) => s.id) || [];
-      }
-
-      let query = supabase.from("attendance").select("status").eq("date", today);
-
-      // Apply center filter by student IDs if not admin
-      if (user?.role !== "admin") {
-        query = query.in("student_id", studentIds);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
+      const { data } = await supabase
+        .from("attendance")
+        .select("status")
+        .eq("date", today);
       return data || [];
     },
   });
 
   const presentCount = todayAttendance?.filter((a) => a.status === "Present").length || 0;
   const absentCount = todayAttendance?.filter((a) => a.status === "Absent").length || 0;
-  const attendanceRate = studentsCount
-    ? Math.round((presentCount / studentsCount) * 100)
-    : 0;
+  const attendanceRate = studentsCount ? Math.round((presentCount / studentsCount) * 100) : 0;
 
   const stats = [
     {

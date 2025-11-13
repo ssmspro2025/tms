@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -13,17 +12,16 @@ const ParentDashboard = () => {
   const navigate = useNavigate();
 
   // Redirect if not parent or missing student_id
-  useEffect(() => {
-    if (!user || user.role !== 'parent' || !user.student_id) {
-      navigate('/login-parent');
-    }
-  }, [user, navigate]);
+  if (!user || user.role !== 'parent' || !user.student_id) {
+    navigate('/login-parent');
+    return null;
+  }
 
-  // Fetch assigned student details
+  // ✅ Fetch student details (only assigned student)
   const { data: student } = useQuery({
-    queryKey: ['student', user?.student_id],
+    queryKey: ['student', user.student_id],
     queryFn: async () => {
-      if (!user?.student_id) return null;
+      if (!user.student_id) return null;
       const { data, error } = await supabase
         .from('students')
         .select('*')
@@ -32,14 +30,13 @@ const ParentDashboard = () => {
       if (error) throw error;
       return data;
     },
-    enabled: !!user?.student_id,
   });
 
-  // Fetch attendance for this student
+  // ✅ Fetch attendance for this student only
   const { data: attendance = [] } = useQuery({
-    queryKey: ['attendance', user?.student_id],
+    queryKey: ['attendance', user.student_id],
     queryFn: async () => {
-      if (!user?.student_id) return [];
+      if (!user.student_id) return [];
       const { data, error } = await supabase
         .from('attendance')
         .select('*')
@@ -48,14 +45,13 @@ const ParentDashboard = () => {
       if (error) throw error;
       return data;
     },
-    enabled: !!user?.student_id,
   });
 
-  // Fetch test results
+  // ✅ Fetch test results (linked tests)
   const { data: testResults = [] } = useQuery({
-    queryKey: ['test-results', user?.student_id],
+    queryKey: ['test-results', user.student_id],
     queryFn: async () => {
-      if (!user?.student_id) return [];
+      if (!user.student_id) return [];
       const { data, error } = await supabase
         .from('test_results')
         .select('*, tests(*)')
@@ -64,14 +60,13 @@ const ParentDashboard = () => {
       if (error) throw error;
       return data;
     },
-    enabled: !!user?.student_id,
   });
 
-  // Fetch chapters studied
+  // ✅ Fetch chapters studied (linked chapters)
   const { data: chapters = [] } = useQuery({
-    queryKey: ['chapters-studied', user?.student_id],
+    queryKey: ['chapters-studied', user.student_id],
     queryFn: async () => {
-      if (!user?.student_id) return [];
+      if (!user.student_id) return [];
       const { data, error } = await supabase
         .from('student_chapters')
         .select('*, chapters(*)')
@@ -80,10 +75,9 @@ const ParentDashboard = () => {
       if (error) throw error;
       return data;
     },
-    enabled: !!user?.student_id,
   });
 
-  // Attendance stats
+  // ✅ Attendance stats
   const totalDays = attendance.length;
   const presentDays = attendance.filter((a: any) => a.status === 'Present').length;
   const absentDays = totalDays - presentDays;
@@ -93,8 +87,6 @@ const ParentDashboard = () => {
     logout();
     navigate('/login-parent');
   };
-
-  if (!user || !user.student_id) return null;
 
   return (
     <div className="min-h-screen bg-background p-6">
