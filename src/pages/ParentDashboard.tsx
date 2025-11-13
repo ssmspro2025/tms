@@ -61,10 +61,10 @@ const ParentDashboard = () => {
 
   // Fetch chapters studied
   const { data: chapters = [] } = useQuery({
-    queryKey: ['chapters-studied', user.student_id],
+    queryKey: ['student_chapters', user.student_id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('chapters_studied')
+        .from('student_chapters')
         .select('*')
         .eq('student_id', user.student_id!)
         .order('date', { ascending: false });
