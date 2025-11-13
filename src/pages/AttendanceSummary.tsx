@@ -45,19 +45,14 @@ export default function AttendanceSummary() {
 
   // Fetch attendance records
   const { data: attendanceData = [] } = useQuery({
-    queryKey: ['attendance-summary', selectedMonth.toISOString().slice(0, 7), user?.center_id],
+    queryKey: ['attendance-summary', selectedMonth.toISOString().slice(0, 7)],
     queryFn: async () => {
       const startDate = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
       const endDate = format(endOfMonth(selectedMonth), 'yyyy-MM-dd');
 
-      // Get student IDs for this center first
-      const studentIds = students.map(s => s.id);
-      if (studentIds.length === 0) return [];
-
       const { data, error } = await supabase
         .from('attendance')
         .select('*, students(name, grade)')
-        .in('student_id', studentIds)
         .gte('date', startDate)
         .lte('date', endDate)
         .order('date');
@@ -65,7 +60,6 @@ export default function AttendanceSummary() {
       if (error) throw error;
       return data;
     },
-    enabled: students.length > 0,
   });
 
   // Calculate statistics
@@ -124,21 +118,15 @@ export default function AttendanceSummary() {
 
   // Get overall statistics across all months
   const { data: allTimeAttendance = [] } = useQuery({
-    queryKey: ['all-time-attendance', user?.center_id],
+    queryKey: ['all-time-attendance'],
     queryFn: async () => {
-      // Get student IDs for this center first
-      const studentIds = students.map(s => s.id);
-      if (studentIds.length === 0) return [];
-
       const { data, error } = await supabase
         .from('attendance')
         .select('*, students(name, grade)')
-        .in('student_id', studentIds)
         .order('date');
       if (error) throw error;
       return data;
     },
-    enabled: students.length > 0,
   });
 
   const calculateAllTimeStats = (): AttendanceStats[] => {
