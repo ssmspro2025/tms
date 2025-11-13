@@ -11,69 +11,73 @@ const ParentDashboard = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  // Redirect if not parent or no student_id
-  if (user?.role !== 'parent' || !user?.student_id) {
+  // Redirect if not parent or missing student_id
+  if (!user || user.role !== 'parent' || !user.student_id) {
     navigate('/login-parent');
     return null;
   }
 
-  // Fetch student details
+  // ✅ Fetch student details (only assigned student)
   const { data: student } = useQuery({
     queryKey: ['student', user.student_id],
     queryFn: async () => {
+      if (!user.student_id) return null;
       const { data, error } = await supabase
         .from('students')
         .select('*')
-        .eq('id', user.student_id!)
+        .eq('id', user.student_id)
         .single();
       if (error) throw error;
       return data;
     },
   });
 
-  // Fetch attendance summary
+  // ✅ Fetch attendance for this student only
   const { data: attendance = [] } = useQuery({
     queryKey: ['attendance', user.student_id],
     queryFn: async () => {
+      if (!user.student_id) return [];
       const { data, error } = await supabase
         .from('attendance')
         .select('*')
-        .eq('student_id', user.student_id!)
+        .eq('student_id', user.student_id)
         .order('date', { ascending: false });
       if (error) throw error;
       return data;
     },
   });
 
-  // Fetch test results
+  // ✅ Fetch test results (linked tests)
   const { data: testResults = [] } = useQuery({
     queryKey: ['test-results', user.student_id],
     queryFn: async () => {
+      if (!user.student_id) return [];
       const { data, error } = await supabase
         .from('test_results')
         .select('*, tests(*)')
-        .eq('student_id', user.student_id!)
+        .eq('student_id', user.student_id)
         .order('date_taken', { ascending: false });
       if (error) throw error;
       return data;
     },
   });
 
-  // Fetch student chapters correctly
+  // ✅ Fetch chapters studied (linked chapters)
   const { data: chapters = [] } = useQuery({
     queryKey: ['chapters-studied', user.student_id],
     queryFn: async () => {
+      if (!user.student_id) return [];
       const { data, error } = await supabase
-        .from('student_chapters')        // Correct table
-        .select('*, chapters(*)')        // Include chapter details
-        .eq('student_id', user.student_id!)
-        .order('date_completed', { ascending: false });  // Match first page logic
+        .from('student_chapters')
+        .select('*, chapters(*)')
+        .eq('student_id', user.student_id)
+        .order('date_completed', { ascending: false });
       if (error) throw error;
       return data;
     },
   });
 
-  // Calculate attendance stats
+  // ✅ Attendance stats
   const totalDays = attendance.length;
   const presentDays = attendance.filter((a: any) => a.status === 'Present').length;
   const absentDays = totalDays - presentDays;
@@ -87,7 +91,7 @@ const ParentDashboard = () => {
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* Header */}
+        {/* HEADER */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <User className="h-8 w-8 text-primary" />
@@ -102,7 +106,7 @@ const ParentDashboard = () => {
           </Button>
         </div>
 
-        {/* Student Info Card */}
+        {/* STUDENT INFO */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -111,7 +115,7 @@ const ParentDashboard = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {student && (
+            {student ? (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Name</p>
@@ -130,11 +134,13 @@ const ParentDashboard = () => {
                   <p className="font-semibold">{student.contact_number}</p>
                 </div>
               </div>
+            ) : (
+              <p className="text-muted-foreground">No student data available</p>
             )}
           </CardContent>
         </Card>
 
-        {/* Attendance Summary */}
+        {/* ATTENDANCE SUMMARY */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -170,7 +176,7 @@ const ParentDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Test Results */}
+        {/* TEST RESULTS */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -194,23 +200,27 @@ const ParentDashboard = () => {
                 </TableHeader>
                 <TableBody>
                   {testResults.map((result: any) => {
-                    const percentage = result.tests?.total_marks 
+                    const percentage = result.tests?.total_marks
                       ? Math.round((result.marks_obtained / result.tests.total_marks) * 100)
                       : 0;
                     return (
                       <TableRow key={result.id}>
-                        <TableCell className="font-medium">{result.tests?.name || '-'}</TableCell>
+                        <TableCell>{result.tests?.name || '-'}</TableCell>
                         <TableCell>{result.tests?.subject || '-'}</TableCell>
                         <TableCell>{new Date(result.date_taken).toLocaleDateString()}</TableCell>
                         <TableCell>
                           {result.marks_obtained}/{result.tests?.total_marks || 0}
                         </TableCell>
                         <TableCell>
-                          <span className={`font-semibold ${
-                            percentage >= 75 ? 'text-green-600' : 
-                            percentage >= 50 ? 'text-yellow-600' : 
-                            'text-red-600'
-                          }`}>
+                          <span
+                            className={`font-semibold ${
+                              percentage >= 75
+                                ? 'text-green-600'
+                                : percentage >= 50
+                                ? 'text-yellow-600'
+                                : 'text-red-600'
+                            }`}
+                          >
                             {percentage}%
                           </span>
                         </TableCell>
@@ -223,7 +233,7 @@ const ParentDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Chapters Studied */}
+        {/* CHAPTERS STUDIED */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -240,17 +250,21 @@ const ParentDashboard = () => {
                   <TableRow>
                     <TableHead>Subject</TableHead>
                     <TableHead>Chapter Name</TableHead>
-                    <TableHead>Date</TableHead>
+                    <TableHead>Date Completed</TableHead>
                     <TableHead>Notes</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {chapters.map((chapter: any) => (
                     <TableRow key={chapter.id}>
-                      <TableCell className="font-medium">{chapter.chapters?.subject || '-'}</TableCell>
+                      <TableCell>{chapter.chapters?.subject || '-'}</TableCell>
                       <TableCell>{chapter.chapters?.chapter_name || '-'}</TableCell>
-                      <TableCell>{new Date(chapter.date_completed).toLocaleDateString()}</TableCell>
-                      <TableCell>{chapter.notes || '-'}</TableCell>
+                      <TableCell>
+                        {chapter.date_completed
+                          ? new Date(chapter.date_completed).toLocaleDateString()
+                          : '-'}
+                      </TableCell>
+                      <TableCell>{chapter.chapters?.notes || '-'}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
