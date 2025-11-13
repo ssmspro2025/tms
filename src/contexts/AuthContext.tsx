@@ -43,9 +43,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (data.success) {
         const userData = data.user;
-        if (userData.username === 'sujan1nepal@gmail.com') {
-          userData.role = 'admin';
-        }
         setUser(userData);
         localStorage.setItem('auth_user', JSON.stringify(userData));
         return { success: true };

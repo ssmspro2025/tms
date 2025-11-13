@@ -29,7 +29,6 @@ const AdminLogin = () => {
       });
       navigate('/admin-dashboard');
     } else {
-      alert(result.error);
       toast({
         title: 'Login failed',
         description: result.error || 'Invalid admin credentials',

@@ -55,18 +55,16 @@ export default function TakeAttendance() {
   });
 
   const { data: existingAttendance } = useQuery({
-    queryKey: ["attendance", dateStr, user?.center_id],
+    queryKey: ["attendance", dateStr],
     queryFn: async () => {
-      if (!user?.center_id) return [];
       const { data, error } = await supabase
         .from("attendance")
         .select("student_id, status, time_in, time_out")
-        .eq("date", dateStr)
-        .eq("center_id", user.center_id);
+        .eq("date", dateStr);
       if (error) throw error;
       return data;
     },
-    enabled: !!dateStr && !!user?.center_id,
+    enabled: !!dateStr,
   });
 
   // Initialize attendance state when data is loaded
@@ -88,14 +86,10 @@ export default function TakeAttendance() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (!students || !user?.center_id) return;
+      if (!students) return;
 
-      // Delete existing attendance for this date and center
-      await supabase
-        .from("attendance")
-        .delete()
-        .eq("date", dateStr)
-        .eq("center_id", user.center_id);
+      // Delete existing attendance for this date
+      await supabase.from("attendance").delete().eq("date", dateStr);
 
       // Insert new attendance records
       const records = students.map((student) => ({
@@ -104,7 +98,6 @@ export default function TakeAttendance() {
         status: attendance[student.id]?.present ? "Present" : "Absent",
         time_in: attendance[student.id]?.timeIn || null,
         time_out: attendance[student.id]?.timeOut || null,
-        center_id: user.center_id,
       }));
 
       const { error } = await supabase.from("attendance").insert(records);

@@ -1,6 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.80.0';
-import * as bcrypt from "https://deno.land/x/bcrypt/mod.ts";
+
+// Helper function to hash password using Web Crypto API
+async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -32,8 +40,8 @@ serve(async (req) => {
       );
     }
 
-    // Hash the password "admin"
-    const passwordHash = bcrypt.hashSync('admin', 10);
+    // Hash the password "precioussn"
+    const passwordHash = await hashPassword('precioussn');
 
     // Create admin user
     const { data: admin, error } = await supabase
