@@ -248,17 +248,27 @@ const ParentDashboard = () => {
                   <TableRow>
                     <TableHead>Subject</TableHead>
                     <TableHead>Chapter Name</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Notes</TableHead>
+                    <TableHead>Date Taught</TableHead>
+                    <TableHead>Date Studied</TableHead>
+                    <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {chapters.map((chapter: any) => (
-                    <TableRow key={chapter.id}>
-                      <TableCell className="font-medium">{chapter.subject}</TableCell>
-                      <TableCell>{chapter.chapter_name}</TableCell>
-                      <TableCell>{new Date(chapter.date).toLocaleDateString()}</TableCell>
-                      <TableCell>{chapter.notes || '-'}</TableCell>
+                  {chapters.map((record: any) => (
+                    <TableRow key={record.id}>
+                      <TableCell className="font-medium">{record.chapters?.subject || '-'}</TableCell>
+                      <TableCell>{record.chapters?.chapter_name || '-'}</TableCell>
+                      <TableCell>{record.chapters?.date_taught ? new Date(record.chapters.date_taught).toLocaleDateString() : '-'}</TableCell>
+                      <TableCell>{record.date_completed ? new Date(record.date_completed).toLocaleDateString() : '-'}</TableCell>
+                      <TableCell>
+                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                          record.completed
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          {record.completed ? '✓ Completed' : 'Assigned'}
+                        </span>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
