@@ -123,6 +123,7 @@ export default function ChaptersTracking() {
             chapter_name: chapterName,
             date_taught: date,
             notes: notes || null,
+            center_id: user?.center_id || null,
           })
           .select()
           .single();
@@ -141,6 +142,7 @@ export default function ChaptersTracking() {
             chapter_name: selectedChapter.chapter_name,
             date_taught: date,
             notes: notes || null,
+            center_id: user?.center_id || null,
           })
           .select()
           .single();
