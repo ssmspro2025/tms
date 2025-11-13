@@ -264,6 +264,63 @@ export type Database = {
           },
         ]
       }
+      student_fees: {
+        Row: {
+          amount: number
+          center_id: string
+          created_at: string
+          due_date: number
+          id: string
+          month: string
+          paid_date: string | null
+          payment_status: string
+          remarks: string | null
+          student_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          center_id: string
+          created_at?: string
+          due_date?: number
+          id?: string
+          month: string
+          paid_date?: string | null
+          payment_status?: string
+          remarks?: string | null
+          student_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          center_id?: string
+          created_at?: string
+          due_date?: number
+          id?: string
+          month?: string
+          paid_date?: string | null
+          payment_status?: string
+          remarks?: string | null
+          student_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "student_fees_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "student_fees_center_id_fkey"
+            columns: ["center_id"]
+            isOneToOne: false
+            referencedRelation: "centers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       students: {
         Row: {
           center_id: string | null
