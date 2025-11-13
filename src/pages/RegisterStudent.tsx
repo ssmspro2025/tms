@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { Pencil, Trash2, Save, X, UserPlus } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface Student {
   id: string;
@@ -21,6 +21,12 @@ interface Student {
   center_id: string;
 }
 
+interface StudentFee {
+  joiningDate: string;
+  monthlyFee: number;
+  paid: boolean;
+}
+
 export default function RegisterStudent() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -30,6 +36,8 @@ export default function RegisterStudent() {
     school_name: "",
     parent_name: "",
     contact_number: "",
+    joiningDate: "",
+    monthlyFee: "",
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Student | null>(null);
@@ -38,6 +46,9 @@ export default function RegisterStudent() {
   const [parentUsername, setParentUsername] = useState("");
   const [parentPassword, setParentPassword] = useState("");
 
+  // State for fee tracking
+  const [studentFees, setStudentFees] = useState<Record<string, StudentFee>>({});
+
   const { data: students, isLoading } = useQuery({
     queryKey: ["students", user?.center_id],
     queryFn: async () => {
@@ -45,12 +56,9 @@ export default function RegisterStudent() {
         .from("students")
         .select("*")
         .order("created_at", { ascending: false });
-      
-      // Filter by center_id if user is not admin
-      if (user?.role !== 'admin' && user?.center_id) {
-        query = query.eq('center_id', user.center_id);
+      if (user?.role !== "admin" && user?.center_id) {
+        query = query.eq("center_id", user.center_id);
       }
-      
       const { data, error } = await query;
       if (error) throw error;
       return data as Student[];
@@ -67,12 +75,25 @@ export default function RegisterStudent() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["students", user?.center_id] });
+      if (students?.length !== undefined) {
+        const lastStudent = students[0];
+        setStudentFees((prev) => ({
+          ...prev,
+          [lastStudent?.id || formData.name]: {
+            joiningDate: formData.joiningDate,
+            monthlyFee: Number(formData.monthlyFee),
+            paid: false,
+          },
+        }));
+      }
       setFormData({
         name: "",
         grade: "",
         school_name: "",
         parent_name: "",
         contact_number: "",
+        joiningDate: "",
+        monthlyFee: "",
       });
       toast.success("Student registered successfully!");
     },
@@ -113,6 +134,11 @@ export default function RegisterStudent() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["students", user?.center_id] });
+      setStudentFees((prev) => {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      });
       toast.success("Student deleted successfully!");
     },
     onError: () => {
@@ -141,20 +167,28 @@ export default function RegisterStudent() {
     setEditData(null);
   };
 
-  // Create parent account mutation
+  const toggleFeePaid = (studentId: string) => {
+    setStudentFees((prev) => ({
+      ...prev,
+      [studentId]: {
+        ...prev[studentId],
+        paid: !prev[studentId].paid,
+      },
+    }));
+  };
+
+  // Parent account mutation
   const createParentMutation = useMutation({
     mutationFn: async () => {
       if (!selectedStudentForParent) return;
-      
-      const { data, error } = await supabase.functions.invoke('create-parent-account', {
+      const { data, error } = await supabase.functions.invoke("create-parent-account", {
         body: {
           username: parentUsername,
           password: parentPassword,
           studentId: selectedStudentForParent.id,
-          centerId: user?.center_id
-        }
+          centerId: user?.center_id,
+        },
       });
-
       if (error) throw error;
       if (!data.success) throw new Error(data.error);
       return data;
@@ -168,7 +202,7 @@ export default function RegisterStudent() {
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to create parent account");
-    }
+    },
   });
 
   const handleCreateParentAccount = (student: Student) => {
@@ -185,6 +219,7 @@ export default function RegisterStudent() {
         <p className="text-muted-foreground">Add new students to the attendance system</p>
       </div>
 
+      {/* Student Form */}
       <Card>
         <CardHeader>
           <CardTitle>Student Information</CardTitle>
@@ -195,57 +230,39 @@ export default function RegisterStudent() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="name">Full Name *</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  required
-                />
+                <Input id="name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="grade">Grade *</Label>
-                <Input
-                  id="grade"
-                  value={formData.grade}
-                  onChange={(e) => setFormData({ ...formData, grade: e.target.value })}
-                  required
-                />
+                <Input id="grade" value={formData.grade} onChange={(e) => setFormData({ ...formData, grade: e.target.value })} required />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="school_name">School Name *</Label>
-                <Input
-                  id="school_name"
-                  value={formData.school_name}
-                  onChange={(e) => setFormData({ ...formData, school_name: e.target.value })}
-                  required
-                />
+                <Input id="school_name" value={formData.school_name} onChange={(e) => setFormData({ ...formData, school_name: e.target.value })} required />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="parent_name">Parent's Name *</Label>
-                <Input
-                  id="parent_name"
-                  value={formData.parent_name}
-                  onChange={(e) => setFormData({ ...formData, parent_name: e.target.value })}
-                  required
-                />
+                <Input id="parent_name" value={formData.parent_name} onChange={(e) => setFormData({ ...formData, parent_name: e.target.value })} required />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="contact_number">Contact Number *</Label>
-                <Input
-                  id="contact_number"
-                  value={formData.contact_number}
-                  onChange={(e) => setFormData({ ...formData, contact_number: e.target.value })}
-                  required
-                />
+                <Input id="contact_number" value={formData.contact_number} onChange={(e) => setFormData({ ...formData, contact_number: e.target.value })} required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="joiningDate">Joining Date *</Label>
+                <Input type="date" id="joiningDate" value={formData.joiningDate} onChange={(e) => setFormData({ ...formData, joiningDate: e.target.value })} required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="monthlyFee">Monthly Fee *</Label>
+                <Input type="number" id="monthlyFee" value={formData.monthlyFee} onChange={(e) => setFormData({ ...formData, monthlyFee: e.target.value })} required />
               </div>
             </div>
-            <Button type="submit" className="w-full md:w-auto">
-              Register Student
-            </Button>
+            <Button type="submit" className="w-full md:w-auto">Register Student</Button>
           </form>
         </CardContent>
       </Card>
 
+      {/* Registered Students Table */}
       <Card>
         <CardHeader>
           <CardTitle>Registered Students</CardTitle>
@@ -264,7 +281,10 @@ export default function RegisterStudent() {
                     <TableHead>School</TableHead>
                     <TableHead>Parent</TableHead>
                     <TableHead>Contact</TableHead>
-                    <TableHead className="text-right" style={{ minWidth: '200px' }}>Actions</TableHead>
+                    <TableHead>Joining Date</TableHead>
+                    <TableHead>Monthly Fee</TableHead>
+                    <TableHead>Paid</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -272,86 +292,40 @@ export default function RegisterStudent() {
                     <TableRow key={student.id}>
                       {editingId === student.id && editData ? (
                         <>
+                          <TableCell><Input value={editData.name} onChange={(e) => setEditData({ ...editData, name: e.target.value })} /></TableCell>
+                          <TableCell><Input value={editData.grade} onChange={(e) => setEditData({ ...editData, grade: e.target.value })} /></TableCell>
+                          <TableCell><Input value={editData.school_name} onChange={(e) => setEditData({ ...editData, school_name: e.target.value })} /></TableCell>
+                          <TableCell><Input value={editData.parent_name} onChange={(e) => setEditData({ ...editData, parent_name: e.target.value })} /></TableCell>
+                          <TableCell><Input value={editData.contact_number} onChange={(e) => setEditData({ ...editData, contact_number: e.target.value })} /></TableCell>
+                          <TableCell>{studentFees[student.id]?.joiningDate || '-'}</TableCell>
+                          <TableCell>{studentFees[student.id]?.monthlyFee || '-'}</TableCell>
                           <TableCell>
-                            <Input
-                              value={editData.name}
-                              onChange={(e) => setEditData({ ...editData, name: e.target.value })}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              value={editData.grade}
-                              onChange={(e) => setEditData({ ...editData, grade: e.target.value })}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              value={editData.school_name}
-                              onChange={(e) =>
-                                setEditData({ ...editData, school_name: e.target.value })
-                              }
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              value={editData.parent_name}
-                              onChange={(e) =>
-                                setEditData({ ...editData, parent_name: e.target.value })
-                              }
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              value={editData.contact_number}
-                              onChange={(e) =>
-                                setEditData({ ...editData, contact_number: e.target.value })
-                              }
-                            />
+                            <input type="checkbox" checked={studentFees[student.id]?.paid || false} onChange={() => toggleFeePaid(student.id)} />
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
-                              <Button size="sm" onClick={handleSave}>
-                                <Save className="h-4 w-4" />
-                              </Button>
-                              <Button size="sm" variant="outline" onClick={handleCancel}>
-                                <X className="h-4 w-4" />
-                              </Button>
+                              <Button size="sm" onClick={handleSave}><Save className="h-4 w-4" /></Button>
+                              <Button size="sm" variant="outline" onClick={handleCancel}><X className="h-4 w-4" /></Button>
                             </div>
                           </TableCell>
                         </>
                       ) : (
                         <>
-                          <TableCell className="font-medium">{student.name}</TableCell>
+                          <TableCell>{student.name}</TableCell>
                           <TableCell>{student.grade}</TableCell>
                           <TableCell>{student.school_name}</TableCell>
                           <TableCell>{student.parent_name}</TableCell>
                           <TableCell>{student.contact_number}</TableCell>
+                          <TableCell>{studentFees[student.id]?.joiningDate || '-'}</TableCell>
+                          <TableCell>{studentFees[student.id]?.monthlyFee || '-'}</TableCell>
+                          <TableCell>
+                            <input type="checkbox" checked={studentFees[student.id]?.paid || false} onChange={() => toggleFeePaid(student.id)} />
+                          </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleEdit(student)}
-                                title="Edit student"
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => handleCreateParentAccount(student)}
-                                title="Create parent login"
-                              >
-                                <UserPlus className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => deleteMutation.mutate(student.id)}
-                                title="Delete student"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => handleEdit(student)} title="Edit student"><Pencil className="h-4 w-4" /></Button>
+                              <Button size="sm" variant="secondary" onClick={() => handleCreateParentAccount(student)} title="Create parent login"><UserPlus className="h-4 w-4" /></Button>
+                              <Button size="sm" variant="destructive" onClick={() => deleteMutation.mutate(student.id)} title="Delete student"><Trash2 className="h-4 w-4" /></Button>
                             </div>
                           </TableCell>
                         </>
@@ -367,41 +341,24 @@ export default function RegisterStudent() {
         </CardContent>
       </Card>
 
-      {/* Parent Account Creation Dialog */}
+      {/* Parent Account Dialog */}
       <Dialog open={isCreatingParent} onOpenChange={setIsCreatingParent}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create Parent Login</DialogTitle>
-            <DialogDescription>
-              Create login credentials for {selectedStudentForParent?.name}'s parent
-            </DialogDescription>
+            <DialogDescription>Create login credentials for {selectedStudentForParent?.name}'s parent</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="parent-username">Username (Email or Phone) *</Label>
-              <Input
-                id="parent-username"
-                value={parentUsername}
-                onChange={(e) => setParentUsername(e.target.value)}
-                placeholder="parent@email.com or 9841234567"
-              />
+              <Input id="parent-username" value={parentUsername} onChange={(e) => setParentUsername(e.target.value)} placeholder="parent@email.com or 9841234567" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="parent-password">Temporary Password *</Label>
-              <Input
-                id="parent-password"
-                type="password"
-                value={parentPassword}
-                onChange={(e) => setParentPassword(e.target.value)}
-                placeholder="Enter temporary password"
-              />
+              <Input type="password" id="parent-password" value={parentPassword} onChange={(e) => setParentPassword(e.target.value)} placeholder="Enter temporary password" />
             </div>
-            <Button 
-              onClick={() => createParentMutation.mutate()} 
-              disabled={!parentUsername || !parentPassword || createParentMutation.isPending}
-              className="w-full"
-            >
-              {createParentMutation.isPending ? 'Creating...' : 'Create Parent Account'}
+            <Button onClick={() => createParentMutation.mutate()} disabled={!parentUsername || !parentPassword || createParentMutation.isPending} className="w-full">
+              {createParentMutation.isPending ? "Creating..." : "Create Parent Account"}
             </Button>
           </div>
         </DialogContent>
