@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -35,31 +35,27 @@ export default function TakeAttendance() {
 
   const dateStr = format(selectedDate, "yyyy-MM-dd");
 
+  // Fetch students
   const { data: students } = useQuery({
     queryKey: ["students", user?.center_id],
     queryFn: async () => {
-      let query = supabase
-        .from("students")
-        .select("id, name, grade")
-        .order("name");
-      
-      // Filter by center_id if user is not admin
-      if (user?.role !== 'admin' && user?.center_id) {
-        query = query.eq('center_id', user.center_id);
+      let query = supabase.from("students").select("id, name, grade").order("name");
+      if (user?.role !== "admin" && user?.center_id) {
+        query = query.eq("center_id", user.center_id);
       }
-      
       const { data, error } = await query;
       if (error) throw error;
       return data as Student[];
     },
   });
 
+  // Fetch attendance for selected date
   const { data: existingAttendance } = useQuery({
     queryKey: ["attendance", dateStr],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("attendance")
-        .select("student_id, status, time_in, time_out")
+        .select("id, student_id, status, time_in, time_out")
         .eq("date", dateStr);
       if (error) throw error;
       return data;
@@ -67,41 +63,70 @@ export default function TakeAttendance() {
     enabled: !!dateStr,
   });
 
-  // Initialize attendance state when data is loaded
-  useState(() => {
-    if (existingAttendance && students) {
-      const newAttendance: Record<string, AttendanceRecord> = {};
-      students.forEach((student) => {
-        const record = existingAttendance.find((a) => a.student_id === student.id);
-        newAttendance[student.id] = {
-          present: record?.status === "Present",
-          timeIn: record?.time_in || "",
-          timeOut: record?.time_out || "",
-          studentId: student.id,
-        };
-      });
-      setAttendance(newAttendance);
-    }
-  });
+  // Initialize attendance when students or existingAttendance changes
+  useEffect(() => {
+    if (!students) return;
+    const newAttendance: Record<string, AttendanceRecord> = {};
+    students.forEach((student) => {
+      const record = existingAttendance?.find((a) => a.student_id === student.id);
+      newAttendance[student.id] = {
+        studentId: student.id,
+        present: record?.status === "Present" || false,
+        timeIn: record?.time_in || "",
+        timeOut: record?.time_out || "",
+      };
+    });
+    setAttendance(newAttendance);
+  }, [students, existingAttendance]);
 
+  // Mutation to update or insert attendance per student
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!students) return;
 
-      // Delete existing attendance for this date
-      await supabase.from("attendance").delete().eq("date", dateStr);
+      const updates: Promise<any>[] = [];
+      const inserts: any[] = [];
 
-      // Insert new attendance records
-      const records = students.map((student) => ({
-        student_id: student.id,
-        date: dateStr,
-        status: attendance[student.id]?.present ? "Present" : "Absent",
-        time_in: attendance[student.id]?.timeIn || null,
-        time_out: attendance[student.id]?.timeOut || null,
-      }));
+      for (const student of students) {
+        const record = attendance[student.id];
+        if (!record) continue;
 
-      const { error } = await supabase.from("attendance").insert(records);
-      if (error) throw error;
+        const { data: existing, error } = await supabase
+          .from("attendance")
+          .select("id")
+          .eq("student_id", student.id)
+          .eq("date", dateStr)
+          .single();
+
+        if (error && error.code !== "PGRST116") throw error; // ignore not found
+
+        if (existing) {
+          updates.push(
+            supabase
+              .from("attendance")
+              .update({
+                status: record.present ? "Present" : "Absent",
+                time_in: record.timeIn || null,
+                time_out: record.timeOut || null,
+              })
+              .eq("id", existing.id)
+          );
+        } else {
+          inserts.push({
+            student_id: student.id,
+            date: dateStr,
+            status: record.present ? "Present" : "Absent",
+            time_in: record.timeIn || null,
+            time_out: record.timeOut || null,
+          });
+        }
+      }
+
+      await Promise.all(updates);
+      if (inserts.length > 0) {
+        const { error } = await supabase.from("attendance").insert(inserts);
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
@@ -119,9 +144,6 @@ export default function TakeAttendance() {
       [studentId]: {
         ...prev[studentId],
         present: !prev[studentId]?.present,
-        studentId,
-        timeIn: prev[studentId]?.timeIn || "",
-        timeOut: prev[studentId]?.timeOut || "",
       },
     }));
   };
@@ -132,8 +154,6 @@ export default function TakeAttendance() {
       [studentId]: {
         ...prev[studentId],
         [field]: value,
-        studentId,
-        present: prev[studentId]?.present || false,
       },
     }));
   };
@@ -143,10 +163,8 @@ export default function TakeAttendance() {
     const newAttendance: Record<string, AttendanceRecord> = {};
     students.forEach((student) => {
       newAttendance[student.id] = {
+        ...attendance[student.id],
         present: true,
-        timeIn: attendance[student.id]?.timeIn || "",
-        timeOut: attendance[student.id]?.timeOut || "",
-        studentId: student.id,
       };
     });
     setAttendance(newAttendance);
@@ -157,10 +175,8 @@ export default function TakeAttendance() {
     const newAttendance: Record<string, AttendanceRecord> = {};
     students.forEach((student) => {
       newAttendance[student.id] = {
+        ...attendance[student.id],
         present: false,
-        timeIn: "",
-        timeOut: "",
-        studentId: student.id,
       };
     });
     setAttendance(newAttendance);
@@ -245,7 +261,7 @@ export default function TakeAttendance() {
                         />
                         <Label
                           htmlFor={student.id}
-                          className="cursor-pointer font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                          className="cursor-pointer font-medium leading-none"
                         >
                           {student.name}
                         </Label>
