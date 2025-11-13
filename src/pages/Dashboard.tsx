@@ -1,29 +1,54 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, CheckCircle2, XCircle, TrendingUp } from "lucide-react";
 import { format } from "date-fns";
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const today = format(new Date(), "yyyy-MM-dd");
 
   const { data: studentsCount } = useQuery({
-    queryKey: ["students-count"],
+    queryKey: ["students-count", user?.center_id],
     queryFn: async () => {
-      const { count } = await supabase
+      let query = supabase
         .from("students")
         .select("*", { count: "exact", head: true });
+
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
+      }
+
+      const { count } = await query;
       return count || 0;
     },
   });
 
   const { data: todayAttendance } = useQuery({
-    queryKey: ["today-attendance", today],
+    queryKey: ["today-attendance", today, user?.center_id],
     queryFn: async () => {
-      const { data } = await supabase
+      let query = supabase
         .from("attendance")
-        .select("status")
-        .eq("date", today);
+        .select("student_id, status");
+
+      // Only filter by date
+      query = query.eq("date", today);
+
+      // If center user, filter to their students
+      if (user?.role !== 'admin' && user?.center_id) {
+        const { data: students } = await supabase
+          .from("students")
+          .select("id")
+          .eq('center_id', user.center_id);
+
+        const studentIds = students?.map(s => s.id) || [];
+        if (studentIds.length > 0) {
+          query = query.in('student_id', studentIds);
+        }
+      }
+
+      const { data } = await query;
       return data || [];
     },
   });
