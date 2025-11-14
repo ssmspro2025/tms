@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,8 @@ import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 
 export default function StudentReport() {
+  const { user } = useAuth();
+
   const [selectedStudentId, setSelectedStudentId] = useState<string>("");
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
     from: startOfMonth(new Date()),
@@ -20,20 +23,19 @@ export default function StudentReport() {
   const [subjectFilter, setSubjectFilter] = useState<string>("all");
   const [aiSummary, setAiSummary] = useState<string>("");
 
-  // Fetch students
+  // Fetch students (center-specific)
   const { data: students = [] } = useQuery({
-    queryKey: ["students"],
+    queryKey: ["students", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("students")
-        .select("*")
-        .order("name");
+      let query = supabase.from("students").select("*").order("name");
+      if (user?.role !== "admin" && user?.center_id) query = query.eq("center_id", user.center_id);
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
   });
 
-  // Fetch attendance data for selected student
+  // Fetch attendance
   const { data: attendanceData = [] } = useQuery({
     queryKey: ["student-attendance", selectedStudentId, dateRange],
     queryFn: async () => {
@@ -56,15 +58,8 @@ export default function StudentReport() {
     queryKey: ["student-chapters", selectedStudentId, subjectFilter],
     queryFn: async () => {
       if (!selectedStudentId) return [];
-      let query = supabase
-        .from("student_chapters")
-        .select("*, chapters(*)")
-        .eq("student_id", selectedStudentId);
-      
-      if (subjectFilter !== "all") {
-        query = query.eq("chapters.subject", subjectFilter);
-      }
-      
+      let query = supabase.from("student_chapters").select("*, chapters(*)").eq("student_id", selectedStudentId);
+      if (subjectFilter !== "all") query = query.eq("chapters.subject", subjectFilter);
       const { data, error } = await query.order("date_completed", { ascending: false });
       if (error) throw error;
       return data;
@@ -72,13 +67,13 @@ export default function StudentReport() {
     enabled: !!selectedStudentId,
   });
 
-  // Fetch all chapters for progress calculation
+  // Fetch all chapters (center-specific)
   const { data: allChapters = [] } = useQuery({
-    queryKey: ["all-chapters"],
+    queryKey: ["all-chapters", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("chapters")
-        .select("*");
+      let query = supabase.from("chapters").select("*");
+      if (user?.role !== "admin" && user?.center_id) query = query.eq("center_id", user.center_id);
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
@@ -89,15 +84,8 @@ export default function StudentReport() {
     queryKey: ["student-test-results", selectedStudentId, subjectFilter],
     queryFn: async () => {
       if (!selectedStudentId) return [];
-      let query = supabase
-        .from("test_results")
-        .select("*, tests(*)")
-        .eq("student_id", selectedStudentId);
-      
-      if (subjectFilter !== "all") {
-        query = query.eq("tests.subject", subjectFilter);
-      }
-      
+      let query = supabase.from("test_results").select("*, tests(*)").eq("student_id", selectedStudentId);
+      if (subjectFilter !== "all") query = query.eq("tests.subject", subjectFilter);
       const { data, error } = await query.order("date_taken", { ascending: false });
       if (error) throw error;
       return data;
@@ -105,7 +93,7 @@ export default function StudentReport() {
     enabled: !!selectedStudentId,
   });
 
-  // Calculate statistics
+  // Statistics
   const totalDays = attendanceData.length;
   const presentDays = attendanceData.filter((a) => a.status === "Present").length;
   const attendancePercentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
@@ -115,14 +103,12 @@ export default function StudentReport() {
   const totalMaxMarks = testResults.reduce((sum, r) => sum + (r.tests?.total_marks || 0), 0);
   const averagePercentage = totalMaxMarks > 0 ? Math.round((totalMarksObtained / totalMaxMarks) * 100) : 0;
 
-  // Calculate chapter progress percentage
   const completedChaptersCount = chapterProgress.filter(cp => cp.completed).length;
   const totalChaptersCount = allChapters.length;
-  const chapterCompletionPercentage = totalChaptersCount > 0 
-    ? Math.round((completedChaptersCount / totalChaptersCount) * 100) 
+  const chapterCompletionPercentage = totalChaptersCount > 0
+    ? Math.round((completedChaptersCount / totalChaptersCount) * 100)
     : 0;
 
-  // Get unique subjects
   const subjects = Array.from(new Set([
     ...chapterProgress.map(c => c.chapters?.subject).filter(Boolean),
     ...testResults.map(t => t.tests?.subject).filter(Boolean)
@@ -145,19 +131,16 @@ export default function StudentReport() {
     },
     onError: (error: any) => {
       console.error("Error generating summary:", error);
-      if (error.message?.includes("429")) {
-        toast.error("Rate limit exceeded. Please try again in a few moments.");
-      } else if (error.message?.includes("402")) {
-        toast.error("AI credits depleted. Please add funds to your workspace.");
-      } else {
-        toast.error("Failed to generate AI summary");
-      }
+      if (error.message?.includes("429")) toast.error("Rate limit exceeded");
+      else if (error.message?.includes("402")) toast.error("AI credits depleted");
+      else toast.error("Failed to generate AI summary");
     },
   });
 
+  // Export CSV
   const exportToCSV = () => {
     if (!selectedStudent) return;
-    
+
     const csvContent = [
       ["Student Report"],
       ["Name", selectedStudent.name],
@@ -190,6 +173,7 @@ export default function StudentReport() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Student Report</h1>
         {selectedStudentId && (
@@ -200,6 +184,7 @@ export default function StudentReport() {
         )}
       </div>
 
+      {/* Student Selector */}
       <Card>
         <CardHeader>
           <CardTitle>Select Student</CardTitle>
@@ -220,29 +205,25 @@ export default function StudentReport() {
         </CardContent>
       </Card>
 
+      {/* All sections visible only when student selected */}
       {selectedStudent && (
         <>
+          {/* Date Range & Subject Filter */}
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardContent className="pt-6">
-                <div className="space-y-2">
-                  <Label>Date Range</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      type="date"
-                      value={format(dateRange.from, "yyyy-MM-dd")}
-                      onChange={(e) =>
-                        setDateRange((prev) => ({ ...prev, from: new Date(e.target.value) }))
-                      }
-                    />
-                    <Input
-                      type="date"
-                      value={format(dateRange.to, "yyyy-MM-dd")}
-                      onChange={(e) =>
-                        setDateRange((prev) => ({ ...prev, to: new Date(e.target.value) }))
-                      }
-                    />
-                  </div>
+                <Label>Date Range</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="date"
+                    value={format(dateRange.from, "yyyy-MM-dd")}
+                    onChange={(e) => setDateRange(prev => ({ ...prev, from: new Date(e.target.value) }))}
+                  />
+                  <Input
+                    type="date"
+                    value={format(dateRange.to, "yyyy-MM-dd")}
+                    onChange={(e) => setDateRange(prev => ({ ...prev, to: new Date(e.target.value) }))}
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -267,7 +248,7 @@ export default function StudentReport() {
             </Card>
           </div>
 
-          {/* Attendance Section */}
+          {/* Attendance */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -333,7 +314,7 @@ export default function StudentReport() {
             </CardContent>
           </Card>
 
-          {/* Chapter Progress Section */}
+          {/* Chapter Progress */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -371,9 +352,7 @@ export default function StudentReport() {
                       </div>
                       <div
                         className={`px-3 py-1 rounded-full text-xs font-medium ${
-                          progress.completed
-                            ? "bg-green-100 text-green-800"
-                            : "bg-yellow-100 text-yellow-800"
+                          progress.completed ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"
                         }`}
                       >
                         {progress.completed ? "Completed" : "In Progress"}
@@ -390,7 +369,7 @@ export default function StudentReport() {
             </CardContent>
           </Card>
 
-          {/* Test Results Section */}
+          {/* Test Results */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -415,7 +394,6 @@ export default function StudentReport() {
                   </p>
                 </div>
               </div>
-
               <div className="space-y-2">
                 {testResults.map((result) => (
                   <div
@@ -444,54 +422,53 @@ export default function StudentReport() {
                   </p>
                 )}
               </div>
-              </CardContent>
-            </Card>
+            </CardContent>
+          </Card>
 
-            {/* AI Summary Section */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2">
-                    <Brain className="h-5 w-5" />
-                    AI Performance Summary
-                  </CardTitle>
-                  <Button
-                    onClick={() => generateSummaryMutation.mutate()}
-                    disabled={generateSummaryMutation.isPending}
-                    size="sm"
-                  >
-                    {generateSummaryMutation.isPending ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <Brain className="mr-2 h-4 w-4" />
-                        Generate AI Summary
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {aiSummary ? (
-                  <Textarea
-                    value={aiSummary}
-                    onChange={(e) => setAiSummary(e.target.value)}
-                    rows={12}
-                    className="resize-none"
-                  />
-                ) : (
-                  <p className="text-muted-foreground text-center py-8">
-                    Click "Generate AI Summary" to get AI-powered insights about this student's
-                    performance
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          </>
-        )}
-      </div>
-    );
-  }
+          {/* AI Summary */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Brain className="h-5 w-5" />
+                  AI Performance Summary
+                </CardTitle>
+                <Button
+                  onClick={() => generateSummaryMutation.mutate()}
+                  disabled={generateSummaryMutation.isPending}
+                  size="sm"
+                >
+                  {generateSummaryMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Brain className="mr-2 h-4 w-4" />
+                      Generate AI Summary
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {aiSummary ? (
+                <Textarea
+                  value={aiSummary}
+                  onChange={(e) => setAiSummary(e.target.value)}
+                  rows={12}
+                  className="resize-none"
+                />
+              ) : (
+                <p className="text-muted-foreground text-center py-8">
+                  Click "Generate AI Summary" to get AI-powered insights about this student's performance
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
