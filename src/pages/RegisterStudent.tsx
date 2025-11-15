@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
@@ -35,7 +35,7 @@ export default function RegisterStudent() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
-  /** --- Single student form states --- */
+  // Single student form
   const [formData, setFormData] = useState({
     name: "",
     grade: "",
@@ -43,37 +43,36 @@ export default function RegisterStudent() {
     parent_name: "",
     contact_number: "",
   });
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Student | null>(null);
-
-  /** --- Parent account states --- */
   const [isCreatingParent, setIsCreatingParent] = useState(false);
   const [selectedStudentForParent, setSelectedStudentForParent] = useState<Student | null>(null);
   const [parentUsername, setParentUsername] = useState("");
   const [parentPassword, setParentPassword] = useState("");
 
-  /** --- Bulk upload states --- */
+  // Bulk upload states
   const [csvPreviewRows, setCsvPreviewRows] = useState<StudentInput[]>([]);
   const [csvErrors, setCsvErrors] = useState<string[]>([]);
   const [multilineText, setMultilineText] = useState("");
   const [showPreviewDialog, setShowPreviewDialog] = useState(false);
   const [parsing, setParsing] = useState(false);
 
-  /** --- Students query --- */
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch students
   const { data: students, isLoading } = useQuery({
     queryKey: ["students", user?.center_id],
     queryFn: async () => {
       let query = supabase.from("students").select("*").order("created_at", { ascending: false });
-      if (user?.role !== "admin" && user?.center_id) {
-        query = query.eq("center_id", user.center_id);
-      }
+      if (user?.role !== "admin" && user?.center_id) query = query.eq("center_id", user.center_id);
       const { data, error } = await query;
       if (error) throw error;
       return data as Student[];
     },
   });
 
-  /** --- Single student mutations --- */
+  // Single create mutation
   const createMutation = useMutation({
     mutationFn: async (student: typeof formData) => {
       const { error } = await supabase.from("students").insert([{ ...student, center_id: user?.center_id }]);
@@ -87,18 +86,16 @@ export default function RegisterStudent() {
     onError: () => toast.error("Failed to register student"),
   });
 
+  // Update student mutation
   const updateMutation = useMutation({
     mutationFn: async (student: Student) => {
-      const { error } = await supabase
-        .from("students")
-        .update({
-          name: student.name,
-          grade: student.grade,
-          school_name: student.school_name,
-          parent_name: student.parent_name,
-          contact_number: student.contact_number,
-        })
-        .eq("id", student.id);
+      const { error } = await supabase.from("students").update({
+        name: student.name,
+        grade: student.grade,
+        school_name: student.school_name,
+        parent_name: student.parent_name,
+        contact_number: student.contact_number,
+      }).eq("id", student.id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -110,6 +107,7 @@ export default function RegisterStudent() {
     onError: () => toast.error("Failed to update student"),
   });
 
+  // Delete student mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from("students").delete().eq("id", id);
@@ -122,17 +120,12 @@ export default function RegisterStudent() {
     onError: () => toast.error("Failed to delete student"),
   });
 
-  /** --- Parent account mutation --- */
+  // Create parent account mutation
   const createParentMutation = useMutation({
     mutationFn: async () => {
       if (!selectedStudentForParent) return;
       const { data, error } = await supabase.functions.invoke("create-parent-account", {
-        body: {
-          username: parentUsername,
-          password: parentPassword,
-          studentId: selectedStudentForParent.id,
-          centerId: user?.center_id,
-        },
+        body: { username: parentUsername, password: parentPassword, studentId: selectedStudentForParent.id, centerId: user?.center_id },
       });
       if (error) throw error;
       if (!data.success) throw new Error(data.error);
@@ -145,14 +138,14 @@ export default function RegisterStudent() {
       setParentUsername("");
       setParentPassword("");
     },
-    onError: (error: any) => toast.error(error.message || "Failed to create parent account"),
+    onError: (err: any) => toast.error(err.message || "Failed to create parent account"),
   });
 
-  /** --- Bulk insert mutation --- */
+  // Bulk insert mutation
   const bulkInsertMutation = useMutation({
     mutationFn: async (rows: StudentInput[]) => {
       if (!rows.length) return;
-      const rowsWithCenter = rows.map((r) => ({ ...r, center_id: user?.center_id || null }));
+      const rowsWithCenter = rows.map(r => ({ ...r, center_id: user?.center_id || null }));
       const { error } = await supabase.from("students").insert(rowsWithCenter);
       if (error) throw error;
     },
@@ -163,19 +156,18 @@ export default function RegisterStudent() {
       setMultilineText("");
       setShowPreviewDialog(false);
     },
-    onError: (error: any) => toast.error(error.message || "Bulk insert failed"),
+    onError: (err: any) => toast.error(err.message || "Bulk insert failed"),
   });
 
-  /** --- CSV / multiline parsing helpers --- */
+  // CSV parser helpers
   const parseCSV = (csv: string): string[][] => {
     const rows: string[][] = [];
     let current = "", row: string[] = [], inQuotes = false;
     for (let i = 0; i < csv.length; i++) {
       const ch = csv[i], nxt = csv[i + 1];
       if (ch === '"') {
-        if (inQuotes && nxt === '"') { current += '"'; i++; } 
-        else { inQuotes = !inQuotes; }
-      } else if (ch === "," && !inQuotes) { row.push(current.trim()); current = ""; } 
+        if (inQuotes && nxt === '"') { current += '"'; i++; } else { inQuotes = !inQuotes; }
+      } else if (ch === "," && !inQuotes) { row.push(current.trim()); current = ""; }
       else if ((ch === "\n" || ch === "\r") && !inQuotes) {
         if (current !== "" || row.length > 0) { row.push(current.trim()); rows.push(row); row = []; current = ""; }
         if (ch === "\r" && csv[i + 1] === "\n") i++;
@@ -185,53 +177,33 @@ export default function RegisterStudent() {
     return rows;
   };
 
-  const mapRowsToStudents = (rows: string[][]): { rows: StudentInput[]; errors: string[] } => {
+  const mapRowsToStudents = (rows: string[][]) => {
     const errors: string[] = [];
     if (!rows || rows.length === 0) return { rows: [], errors };
-    const header = rows[0].map((h) => h.toLowerCase());
-    let startIndex = 0, hasHeader = ["name", "grade", "school_name", "parent_name", "contact_number"].every(f => header.includes(f));
-    if (hasHeader) startIndex = 1;
+    const header = rows[0].map(h => h.toLowerCase());
+    let startIndex = rows[0].length === 5 ? 0 : 1; // simple header detection
     const output: StudentInput[] = [];
-
     for (let i = startIndex; i < rows.length; i++) {
       const cols = rows[i];
-      const student: StudentInput = hasHeader
-        ? {
-            name: (cols[header.indexOf("name")] || "").trim(),
-            grade: (cols[header.indexOf("grade")] || "").trim(),
-            school_name: (cols[header.indexOf("school_name")] || cols[header.indexOf("school")] || "").trim(),
-            parent_name: (cols[header.indexOf("parent_name")] || cols[header.indexOf("parent")] || "").trim(),
-            contact_number: (cols[header.indexOf("contact_number")] || cols[header.indexOf("contact")] || "").trim(),
-          }
-        : {
-            name: (cols[0] || "").trim(),
-            grade: (cols[1] || "").trim(),
-            school_name: (cols[2] || "").trim(),
-            parent_name: (cols[3] || "").trim(),
-            contact_number: (cols[4] || "").trim(),
-          };
+      const [name = "", grade = "", school_name = "", parent_name = "", contact_number = ""] = cols;
+      const student: StudentInput = { name: name.trim(), grade: grade.trim(), school_name: school_name.trim(), parent_name: parent_name.trim(), contact_number: contact_number.trim() };
       const rowNumber = i + 1;
       const rowErrors: string[] = [];
       if (!student.name) rowErrors.push(`Row ${rowNumber}: name is required`);
       if (!student.grade) rowErrors.push(`Row ${rowNumber}: grade is required`);
       if (!student.contact_number) rowErrors.push(`Row ${rowNumber}: contact_number is required`);
-      if (rowErrors.length) errors.push(...rowErrors);
-      else output.push(student);
+      if (rowErrors.length) errors.push(...rowErrors); else output.push(student);
     }
-
     // Deduplicate
     const unique: StudentInput[] = [];
-    const seenContacts = new Set<string>();
+    const seen = new Set<string>();
     for (const s of output) {
       const key = s.contact_number || `${s.name}|${s.grade}`;
-      if (!seenContacts.has(key)) { unique.push(s); seenContacts.add(key); } 
-      else errors.push(`Duplicate in batch: ${key}`);
+      if (!seen.has(key)) { seen.add(key); unique.push(s); } else { errors.push(`Duplicate in batch: ${key}`); }
     }
-
     return { rows: unique, errors };
   };
 
-  /** --- CSV file handler --- */
   const handleCsvFile = (file: File | null) => {
     if (!file) return;
     setParsing(true);
@@ -248,9 +220,8 @@ export default function RegisterStudent() {
     reader.readAsText(file);
   };
 
-  /** --- Multiline paste handler --- */
   const handleParseMultiline = () => {
-    if (!multilineText.trim()) return toast.error("No text to parse");
+    if (!multilineText.trim()) { toast.error("No text to parse"); return; }
     setParsing(true);
     const normalized = multilineText.replace(/\|/g, ",");
     const { rows, errors } = mapRowsToStudents(parseCSV(normalized));
@@ -260,36 +231,33 @@ export default function RegisterStudent() {
     setParsing(false);
   };
 
-  /** --- CSV template download --- */
   const downloadTemplate = () => {
     const csv = ["name,grade,school_name,parent_name,contact_number", "John Doe,6,ABC School,Robert Doe,9812345678"].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "students-template.csv";
-    a.click();
+    a.href = url; a.download = "students-template.csv"; a.click();
   };
 
-  /** --- Bulk insert confirm --- */
   const handleBulkInsertConfirm = () => {
-    if (!csvPreviewRows.length) return toast.error("No rows to insert");
+    if (!csvPreviewRows.length) { toast.error("No rows to insert"); return; }
     bulkInsertMutation.mutate(csvPreviewRows);
   };
 
-  /** --- Handlers for single student --- */
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); createMutation.mutate(formData); };
   const handleEdit = (student: Student) => { setEditingId(student.id); setEditData({ ...student }); };
   const handleSave = () => { if (editData) updateMutation.mutate(editData); };
   const handleCancel = () => { setEditingId(null); setEditData(null); };
   const handleCreateParentAccount = (student: Student) => { setSelectedStudentForParent(student); setParentUsername(""); setParentPassword(""); setIsCreatingParent(true); };
 
-  /** --- Render --- */
   return (
     <div className="space-y-6">
-      <h2 className="text-3xl font-bold tracking-tight">Register Student</h2>
-      <p className="text-muted-foreground">Add new students to the attendance system</p>
+      <div>
+        <h2 className="text-3xl font-bold tracking-tight">Register Student</h2>
+        <p className="text-muted-foreground">Add new students to the attendance system</p>
+      </div>
 
-      {/* Single Student Form */}
+      {/* Single student form */}
       <Card>
         <CardHeader>
           <CardTitle>Student Information</CardTitle>
@@ -298,166 +266,156 @@ export default function RegisterStudent() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="name">Full Name *</Label>
-                <Input id="name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="grade">Grade *</Label>
-                <Input id="grade" value={formData.grade} onChange={(e) => setFormData({ ...formData, grade: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="school_name">School Name *</Label>
-                <Input id="school_name" value={formData.school_name} onChange={(e) => setFormData({ ...formData, school_name: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="parent_name">Parent's Name *</Label>
-                <Input id="parent_name" value={formData.parent_name} onChange={(e) => setFormData({ ...formData, parent_name: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="contact_number">Contact Number *</Label>
-                <Input id="contact_number" value={formData.contact_number} onChange={(e) => setFormData({ ...formData, contact_number: e.target.value })} required />
+              {["name","grade","school_name","parent_name","contact_number"].map((field) => (
+                <div className="space-y-2" key={field}>
+                  <Label htmlFor={field}>{field.replace("_"," ").toUpperCase()} *</Label>
+                  <Input
+                    id={field}
+                    value={(formData as any)[field]}
+                    onChange={(e) => setFormData({...formData, [field]: e.target.value})}
+                    required
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-2 items-center">
+              <Button type="submit">Register Student</Button>
+              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                <Upload className="inline-block mr-2 h-4 w-4" /> Upload CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={downloadTemplate}>
+                <Download className="inline-block mr-2 h-4 w-4" /> CSV Template
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => {
+                const el = document.getElementById("multiline-area"); if (el) el.style.display = el.style.display === "none" ? "block" : "none";
+              }}>Paste Rows</Button>
+
+              <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={e => handleCsvFile(e.target.files?.[0] ?? null)} />
+            </div>
+
+            {/* Multiline input */}
+            <div id="multiline-area" style={{display:"none"}} className="mt-4">
+              <Label>Paste rows (name,grade,school_name,parent_name,contact_number)</Label>
+              <Textarea value={multilineText} onChange={e => setMultilineText(e.target.value)} rows={5} placeholder="John Doe,6,ABC School,Robert Doe,9812345678" />
+              <div className="flex gap-2 mt-2">
+                <Button onClick={handleParseMultiline} disabled={parsing}>Parse & Preview</Button>
+                <Button variant="outline" onClick={() => setMultilineText("")}>Clear</Button>
               </div>
             </div>
-            <Button type="submit">Register Student</Button>
           </form>
         </CardContent>
       </Card>
 
-      {/* Bulk Upload Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Bulk Upload Students</CardTitle>
-          <CardDescription>Upload multiple students via CSV or paste rows</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2 items-center">
-            <input id="csv-upload" type="file" accept=".csv,text/csv" onChange={(e) => handleCsvFile(e.target.files?.[0] ?? null)} className="hidden" />
-            <label htmlFor="csv-upload">
-              <Button type="button" variant="outline" size="sm"><Upload className="inline-block mr-2 h-4 w-4"/>Upload CSV</Button>
-            </label>
-            <Button type="button" variant="outline" size="sm" onClick={downloadTemplate}><Download className="inline-block mr-2 h-4 w-4"/>CSV Template</Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => { const el = document.getElementById("multiline-area"); if(el) el.style.display = el.style.display === "none" ? "block" : "none"; }}>Paste Rows</Button>
-          </div>
-
-          <div id="multiline-area" style={{ display: "none" }}>
-            <Label>Paste rows (name, grade, school_name, parent_name, contact_number)</Label>
-            <Textarea value={multilineText} onChange={(e) => setMultilineText(e.target.value)} placeholder="John Doe,6,ABC School,Robert Doe,9812345678" rows={5} />
-            <div className="flex gap-2 mt-2">
-              <Button type="button" onClick={handleParseMultiline}>Parse & Preview</Button>
-              <Button type="button" variant="outline" onClick={() => setMultilineText("")}>Clear</Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Preview dialog */}
+      {/* Preview Dialog */}
       <Dialog open={showPreviewDialog} onOpenChange={setShowPreviewDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Preview Parsed Rows</DialogTitle>
-            <DialogDescription>Review parsed rows before inserting. Errors are listed below.</DialogDescription>
+            <DialogDescription>Review parsed rows before inserting. Invalid rows (if any) are listed below.</DialogDescription>
           </DialogHeader>
-
-          {csvErrors.length > 0 && (
-            <div className="p-3 bg-red-50 rounded border border-red-100">
-              <p className="font-semibold text-red-700">Errors:</p>
-              <ul className="list-disc ml-6 text-sm text-red-700">{csvErrors.map((e,i)=><li key={i}>{e}</li>)}</ul>
+          <div className="space-y-4 py-2">
+            {csvErrors.length>0 && (
+              <div className="p-3 bg-red-50 rounded border border-red-100">
+                <p className="font-semibold text-red-700">Errors:</p>
+                <ul className="list-disc ml-6 text-sm text-red-700">{csvErrors.map((e,i)=><li key={i}>{e}</li>)}</ul>
+              </div>
+            )}
+            <div className="overflow-x-auto max-h-64 overflow-y-auto border rounded">
+              <table className="min-w-full">
+                <thead className="bg-muted"><tr>
+                  <th className="px-3 py-2 text-left">Name</th>
+                  <th className="px-3 py-2 text-left">Grade</th>
+                  <th className="px-3 py-2 text-left">School</th>
+                  <th className="px-3 py-2 text-left">Parent</th>
+                  <th className="px-3 py-2 text-left">Contact</th>
+                </tr></thead>
+                <tbody>{csvPreviewRows.map((r,i)=><tr key={i} className="border-t">
+                  <td className="px-3 py-2">{r.name}</td>
+                  <td className="px-3 py-2">{r.grade}</td>
+                  <td className="px-3 py-2">{r.school_name}</td>
+                  <td className="px-3 py-2">{r.parent_name}</td>
+                  <td className="px-3 py-2">{r.contact_number}</td>
+                </tr>)}</tbody>
+              </table>
             </div>
-          )}
-
-          <div className="overflow-x-auto max-h-64 overflow-y-auto border rounded mt-2">
-            <table className="min-w-full">
-              <thead className="bg-muted"><tr>
-                <th className="px-3 py-2 text-left">Name</th>
-                <th className="px-3 py-2 text-left">Grade</th>
-                <th className="px-3 py-2 text-left">School</th>
-                <th className="px-3 py-2 text-left">Parent</th>
-                <th className="px-3 py-2 text-left">Contact</th>
-              </tr></thead>
-              <tbody>
-                {csvPreviewRows.map((r,i)=>(<tr key={i}>
-                  <td className="border px-2 py-1">{r.name}</td>
-                  <td className="border px-2 py-1">{r.grade}</td>
-                  <td className="border px-2 py-1">{r.school_name}</td>
-                  <td className="border px-2 py-1">{r.parent_name}</td>
-                  <td className="border px-2 py-1">{r.contact_number}</td>
-                </tr>))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex justify-end mt-4 gap-2">
-            <Button type="button" onClick={handleBulkInsertConfirm} disabled={!csvPreviewRows.length || csvErrors.length > 0}>
-              <Save className="inline-block mr-2 h-4 w-4"/>Insert All
-            </Button>
-            <Button type="button" variant="outline" onClick={()=>setShowPreviewDialog(false)}><X className="inline-block mr-2 h-4 w-4"/>Close</Button>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={()=>{setCsvPreviewRows([]); setShowPreviewDialog(false)}}>Cancel</Button>
+              <Button onClick={handleBulkInsertConfirm} disabled={bulkInsertMutation.isLoading || csvPreviewRows.length===0}>
+                {bulkInsertMutation.isLoading ? "Importing..." : `Import ${csvPreviewRows.length} rows`}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Student Table */}
+      {/* Registered Students Table */}
       <Card>
-        <CardHeader><CardTitle>Students</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Registered Students</CardTitle>
+          <CardDescription>Manage your student records</CardDescription>
+        </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Grade</TableHead>
-                <TableHead>School</TableHead>
-                <TableHead>Parent</TableHead>
-                <TableHead>Contact</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableRow><TableCell colSpan={6}>Loading...</TableCell></TableRow>
-              ) : students && students.length ? (
-                students.map(s => (
-                  <TableRow key={s.id}>
-                    <TableCell>{editingId === s.id ? <Input value={editData?.name} onChange={(e)=>setEditData(d=>d?{...d,name:e.target.value}:d)} /> : s.name}</TableCell>
-                    <TableCell>{editingId === s.id ? <Input value={editData?.grade} onChange={(e)=>setEditData(d=>d?{...d,grade:e.target.value}:d)} /> : s.grade}</TableCell>
-                    <TableCell>{editingId === s.id ? <Input value={editData?.school_name} onChange={(e)=>setEditData(d=>d?{...d,school_name:e.target.value}:d)} /> : s.school_name}</TableCell>
-                    <TableCell>{editingId === s.id ? <Input value={editData?.parent_name} onChange={(e)=>setEditData(d=>d?{...d,parent_name:e.target.value}:d)} /> : s.parent_name}</TableCell>
-                    <TableCell>{editingId === s.id ? <Input value={editData?.contact_number} onChange={(e)=>setEditData(d=>d?{...d,contact_number:e.target.value}:d)} /> : s.contact_number}</TableCell>
-                    <TableCell className="flex gap-2">
-                      {editingId === s.id ? (
-                        <>
-                          <Button size="sm" onClick={handleSave}><Save /></Button>
-                          <Button size="sm" variant="outline" onClick={handleCancel}><X /></Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button size="sm" onClick={()=>handleEdit(s)}><Pencil /></Button>
-                          <Button size="sm" variant="destructive" onClick={()=>deleteMutation.mutate(s.id)}><Trash2 /></Button>
-                          <Button size="sm" onClick={()=>handleCreateParentAccount(s)}><UserPlus /></Button>
-                        </>
-                      )}
-                    </TableCell>
+          {isLoading ? <p>Loading students...</p> :
+            students && students.length>0 ? (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Grade</TableHead>
+                    <TableHead>School</TableHead>
+                    <TableHead>Parent</TableHead>
+                    <TableHead>Contact</TableHead>
+                    <TableHead className="text-right" style={{minWidth:"200px"}}>Actions</TableHead>
                   </TableRow>
-                ))
-              ) : (
-                <TableRow><TableCell colSpan={6}>No students yet</TableCell></TableRow>
-              )}
-            </TableBody>
-          </Table>
+                </TableHeader>
+                <TableBody>
+                  {students.map((student)=>(
+                    <TableRow key={student.id}>
+                      {editingId===student.id && editData ? <>
+                        <TableCell><Input value={editData.name} onChange={e=>setEditData({...editData,name:e.target.value})} /></TableCell>
+                        <TableCell><Input value={editData.grade} onChange={e=>setEditData({...editData,grade:e.target.value})} /></TableCell>
+                        <TableCell><Input value={editData.school_name} onChange={e=>setEditData({...editData,school_name:e.target.value})} /></TableCell>
+                        <TableCell><Input value={editData.parent_name} onChange={e=>setEditData({...editData,parent_name:e.target.value})} /></TableCell>
+                        <TableCell><Input value={editData.contact_number} onChange={e=>setEditData({...editData,contact_number:e.target.value})} /></TableCell>
+                        <TableCell className="flex gap-2 justify-end">
+                          <Button onClick={handleSave} size="sm"><Save className="h-4 w-4 mr-1"/>Save</Button>
+                          <Button variant="outline" onClick={handleCancel} size="sm"><X className="h-4 w-4 mr-1"/>Cancel</Button>
+                        </TableCell>
+                      </> : <>
+                        <TableCell>{student.name}</TableCell>
+                        <TableCell>{student.grade}</TableCell>
+                        <TableCell>{student.school_name}</TableCell>
+                        <TableCell>{student.parent_name}</TableCell>
+                        <TableCell>{student.contact_number}</TableCell>
+                        <TableCell className="flex gap-2 justify-end">
+                          <Button variant="outline" size="sm" onClick={()=>handleEdit(student)}><Pencil className="h-4 w-4"/></Button>
+                          <Button variant="destructive" size="sm" onClick={()=>deleteMutation.mutate(student.id)}><Trash2 className="h-4 w-4"/></Button>
+                          <Button size="sm" onClick={()=>handleCreateParentAccount(student)}><UserPlus className="h-4 w-4"/></Button>
+                        </TableCell>
+                      </>}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>) : <p>No students yet.</p>}
         </CardContent>
       </Card>
 
-      {/* Parent Account Dialog */}
+      {/* Parent creation dialog */}
       <Dialog open={isCreatingParent} onOpenChange={setIsCreatingParent}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create Parent Account</DialogTitle>
-            <DialogDescription>Assign a parent account for {selectedStudentForParent?.name}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <Input placeholder="Username" value={parentUsername} onChange={(e)=>setParentUsername(e.target.value)} />
-            <Input placeholder="Password" type="password" value={parentPassword} onChange={(e)=>setParentPassword(e.target.value)} />
-            <div className="flex justify-end gap-2">
-              <Button onClick={()=>createParentMutation.mutate()}>Create</Button>
+          <div className="space-y-2">
+            <Label>Username</Label>
+            <Input value={parentUsername} onChange={e=>setParentUsername(e.target.value)} />
+            <Label>Password</Label>
+            <Input type="password" value={parentPassword} onChange={e=>setParentPassword(e.target.value)} />
+            <div className="flex gap-2 justify-end mt-2">
+              <Button onClick={()=>createParentMutation.mutate()} disabled={createParentMutation.isLoading}>Create</Button>
               <Button variant="outline" onClick={()=>setIsCreatingParent(false)}>Cancel</Button>
             </div>
           </div>
