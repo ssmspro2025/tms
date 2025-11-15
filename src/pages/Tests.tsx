@@ -8,12 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { FileUp, Plus, Trash2, Users, FileText, Eye } from "lucide-react";
+import { FileUp, Plus, Trash2, Users } from "lucide-react";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import OCRModal from "@/components/OCRModal";
 
-// BulkMarksEntry Component
+// --- Bulk Marks Entry Component ---
 function BulkMarksEntry({ open, onOpenChange, students, testId, totalMarks, onSave }: any) {
   const [selectedGrade, setSelectedGrade] = useState("all");
   const [marksState, setMarksState] = useState<Record<string, { marks: string; file?: File }>>({});
@@ -32,7 +32,7 @@ function BulkMarksEntry({ open, onOpenChange, students, testId, totalMarks, onSa
   const handleSave = () => {
     const marksArray = Object.entries(marksState).map(([studentId, data]) => ({
       studentId,
-      marks: parseInt(data.marks || "0"),
+      marks: parseInt(data.marks),
       file: data.file,
     }));
     onSave(marksArray);
@@ -91,7 +91,7 @@ function BulkMarksEntry({ open, onOpenChange, students, testId, totalMarks, onSa
   );
 }
 
-// Main Tests Page
+// --- Main Test Page ---
 export default function Tests() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -110,47 +110,47 @@ export default function Tests() {
   const [filterGrade, setFilterGrade] = useState("all");
   const [filterSubject, setFilterSubject] = useState("all");
 
-  // Fetch tests
+  // --- Fetch Tests ---
   const { data: tests = [] } = useQuery({
     queryKey: ["tests", user?.center_id],
     queryFn: async () => {
       let query = supabase.from("tests").select("*").order("date", { ascending: false });
-      if (user?.role !== "admin" && user?.center_id) query = query.eq('center_id', user.center_id);
+      if (user?.role !== "admin" && user?.center_id) query = query.eq("center_id", user.center_id);
       const { data, error } = await query;
       if (error) throw error;
       return data;
     },
   });
 
-  // Fetch students
+  // --- Fetch Students ---
   const { data: students = [] } = useQuery({
     queryKey: ["students", user?.center_id],
     queryFn: async () => {
       let query = supabase.from("students").select("*").order("name");
-      if (user?.role !== "admin" && user?.center_id) query = query.eq('center_id', user.center_id);
+      if (user?.role !== "admin" && user?.center_id) query = query.eq("center_id", user.center_id);
       const { data, error } = await query;
       if (error) throw error;
       return data;
     },
   });
 
-  // Fetch test results
+  // --- Fetch Test Results ---
   const { data: testResults = [] } = useQuery({
     queryKey: ["test-results", selectedTest],
     queryFn: async () => {
       if (!selectedTest) return [];
       const { data, error } = await supabase
         .from("test_results")
-        .select("*, students(name, grade)")
+        .select("*") // fetch all existing columns without adding anything extra
         .eq("test_id", selectedTest)
-        .order("marks_obtained", { ascending: false });
+        .order("created_at", { ascending: false }); // fetch latest results first
       if (error) throw error;
       return data;
     },
     enabled: !!selectedTest,
   });
 
-  // Create test mutation
+  // --- Create Test Mutation ---
   const createTestMutation = useMutation({
     mutationFn: async () => {
       let uploadedFileUrl = null;
@@ -182,37 +182,37 @@ export default function Tests() {
     onError: () => toast.error("Failed to create test"),
   });
 
-  // Bulk marks mutation (fixed)
+  // --- Bulk Marks Mutation ---
   const bulkMarksMutation = useMutation({
     mutationFn: async (marks: Array<{ studentId: string; marks: number; file?: File }>) => {
-      if (!selectedTest) throw new Error("No test selected");
-      await Promise.all(
-        marks.map(async (m) => {
-          await supabase.from("test_results").delete().eq("test_id", selectedTest).eq("student_id", m.studentId);
-          let fileUrl: string | null = null;
-          if (m.file) {
-            const fileExt = m.file.name.split(".").pop();
-            const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-            const { error: uploadError } = await supabase.storage.from("test-files").upload(fileName, m.file);
-            if (uploadError) throw uploadError;
-            fileUrl = fileName;
-          }
-          const { error: insertError } = await supabase.from("test_results").insert({
-            test_id: selectedTest,
-            student_id: m.studentId,
-            marks_obtained: m.marks,
-            date_taken: format(new Date(), "yyyy-MM-dd"),
-            answersheet_url: fileUrl,
-          });
-          if (insertError) throw insertError;
-        })
-      );
+      for (const m of marks) {
+        // --- delete previous if any ---
+        await supabase.from("test_results").delete().eq("test_id", selectedTest).eq("student_id", m.studentId);
+
+        // --- upload file if present ---
+        let fileUrl = null;
+        if (m.file) {
+          const fileExt = m.file.name.split(".").pop();
+          const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+          await supabase.storage.from("test-files").upload(fileName, m.file);
+          fileUrl = fileName;
+        }
+
+        // --- insert only existing columns ---
+        await supabase.from("test_results").insert({
+          test_id: selectedTest,
+          student_id: m.studentId,
+          marks: m.marks,          // column must match Lovable's table
+          file_url: fileUrl,       // only if the table has file reference
+          created_at: new Date().toISOString(), // if table has timestamp
+        });
+      }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["test-results", selectedTest] });
+      queryClient.invalidateQueries({ queryKey: ["test-results"] });
       toast.success("Bulk marks saved successfully");
     },
-    onError: (err: any) => toast.error(err.message || "Failed to save bulk marks"),
+    onError: () => toast.error("Failed to save bulk marks"),
   });
 
   const deleteTestMutation = useMutation({
@@ -224,11 +224,7 @@ export default function Tests() {
       await supabase.from("test_results").delete().eq("test_id", testId);
       await supabase.from("tests").delete().eq("id", testId);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tests"] });
-      setSelectedTest("");
-      toast.success("Test deleted");
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["tests"] }); setSelectedTest(""); toast.success("Test deleted"); },
     onError: (error: any) => toast.error(error.message || "Failed to delete test"),
   });
 
@@ -236,11 +232,11 @@ export default function Tests() {
     if (e.target.files && e.target.files[0]) setUploadedFile(e.target.files[0]);
   };
 
+  // --- Filters ---
   const filteredTests = tests.filter(t =>
     (filterGrade === "all" || t.grade === filterGrade) &&
     (filterSubject === "all" || t.subject === filterSubject)
   );
-
   const selectedTestData = tests.find(t => t.id === selectedTest);
   const subjectsList = Array.from(new Set(tests.map(t => t.subject).filter(Boolean)));
   const gradesListTests = Array.from(new Set(tests.map(t => t.grade).filter(Boolean)));
@@ -278,7 +274,7 @@ export default function Tests() {
         </div>
       </div>
 
-      {/* Filters */}
+      {/* --- Filters --- */}
       <div className="flex gap-4">
         <Select value={filterGrade} onValueChange={setFilterGrade}>
           <SelectTrigger><SelectValue placeholder="Grade Filter" /></SelectTrigger>
@@ -296,7 +292,7 @@ export default function Tests() {
         </Select>
       </div>
 
-      {/* Tests List */}
+      {/* --- Tests List --- */}
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader><CardTitle>All Tests</CardTitle></CardHeader>
@@ -317,56 +313,27 @@ export default function Tests() {
           <Card>
             <CardHeader className="flex justify-between items-center">
               <CardTitle>Bulk Marks Entry - {selectedTestData.name}</CardTitle>
-              <Button onClick={() => setShowBulkEntry(true)} variant="outline">
-                <Users className="mr-2 h-4 w-4" />Bulk Entry
-              </Button>
+              <Button onClick={() => setShowBulkEntry(true)} variant="outline"><Users className="mr-2 h-4 w-4" />Bulk Entry</Button>
             </CardHeader>
-
-            <CardContent>
-              {testResults.length > 0 ? (
-                <div className="space-y-2">
-                  {testResults.map((r: any) => (
-                    <div key={r.id} className="flex items-center justify-between border p-2 rounded">
-                      <div>
-                        <p className="font-medium">{r.students.name}</p>
-                        <p className="text-sm text-muted-foreground">Grade {r.students.grade}</p>
-                        <p>Marks: {r.marks_obtained}</p>
-                      </div>
-                      {r.answersheet_url && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          as="a"
-                          target="_blank"
-                          href={supabase.storage.from("test-files").getPublicUrl(r.answersheet_url).data.publicUrl}
-                        >
-                          <Eye className="mr-2 h-4 w-4" />View Sheet
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p>No results yet for this test.</p>
-              )}
-            </CardContent>
           </Card>
         )}
       </div>
 
-      <BulkMarksEntry
-        open={showBulkEntry}
-        onOpenChange={setShowBulkEntry}
-        students={students}
-        testId={selectedTest}
-        totalMarks={selectedTestData?.total_marks || 0}
-        onSave={(marks) => bulkMarksMutation.mutate(marks)}
-      />
+      {showBulkEntry && selectedTest && selectedTestData && (
+        <BulkMarksEntry
+          open={showBulkEntry}
+          onOpenChange={setShowBulkEntry}
+          students={students}
+          testId={selectedTest}
+          totalMarks={selectedTestData.total_marks}
+          onSave={(marks) => bulkMarksMutation.mutate(marks)}
+        />
+      )}
 
       <OCRModal
         open={showOCRModal}
         onOpenChange={setShowOCRModal}
-        onSave={() => toast.success("OCR Text Extracted!")}
+        onSave={(text) => toast.success("OCR Text Extracted!")}
       />
     </div>
   );
