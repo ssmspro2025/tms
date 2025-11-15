@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { FileUp, Plus, Trash2, Edit, Users, X, FileText } from "lucide-react";
+import { FileUp, Plus, Trash2, Users, FileText, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import OCRModal from "@/components/OCRModal";
@@ -19,9 +19,11 @@ import QuestionPaperViewer from "@/components/QuestionPaperViewer";
 export default function Tests() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+
+  // UI states
   const [isAddingTest, setIsAddingTest] = useState(false);
   const [selectedTest, setSelectedTest] = useState<string>("");
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [uploadedTestFile, setUploadedTestFile] = useState<File | null>(null);
   const [showOCRModal, setShowOCRModal] = useState(false);
   const [showBulkEntry, setShowBulkEntry] = useState(false);
   const [extractedTestContent, setExtractedTestContent] = useState("");
@@ -33,26 +35,22 @@ export default function Tests() {
   const [totalMarks, setTotalMarks] = useState("");
   const [grade, setGrade] = useState("");
 
-  // States for entering marks
+  // States for individual student marks entry
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [marksObtained, setMarksObtained] = useState("");
   const [resultDate, setResultDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [resultNotes, setResultNotes] = useState("");
+  const [answerSheetFile, setAnswerSheetFile] = useState<File | null>(null);
+
+  // Grade filter for bulk entry
+  const [bulkGradeFilter, setBulkGradeFilter] = useState<string>("all");
 
   // Fetch tests
   const { data: tests = [] } = useQuery({
     queryKey: ["tests", user?.center_id],
     queryFn: async () => {
-      let query = supabase
-        .from("tests")
-        .select("*")
-        .order("date", { ascending: false });
-      
-      // Filter by center_id if user is not admin
-      if (user?.role !== 'admin' && user?.center_id) {
-        query = query.eq('center_id', user.center_id);
-      }
-      
+      let query = supabase.from("tests").select("*").order("date", { ascending: false });
+      if (user?.role !== "admin" && user?.center_id) query = query.eq("center_id", user.center_id);
       const { data, error } = await query;
       if (error) throw error;
       return data;
@@ -63,21 +61,16 @@ export default function Tests() {
   const { data: students = [] } = useQuery({
     queryKey: ["students", user?.center_id],
     queryFn: async () => {
-      let query = supabase
-        .from("students")
-        .select("*")
-        .order("name");
-      
-      // Filter by center_id if user is not admin
-      if (user?.role !== 'admin' && user?.center_id) {
-        query = query.eq('center_id', user.center_id);
-      }
-      
+      let query = supabase.from("students").select("*").order("name");
+      if (user?.role !== "admin" && user?.center_id) query = query.eq("center_id", user.center_id);
       const { data, error } = await query;
       if (error) throw error;
       return data;
     },
   });
+
+  // Filtered students for bulk entry by grade
+  const filteredStudents = bulkGradeFilter === "all" ? students : students.filter(s => s.grade === bulkGradeFilter);
 
   // Fetch test results for selected test
   const { data: testResults = [] } = useQuery({
@@ -95,19 +88,16 @@ export default function Tests() {
     enabled: !!selectedTest,
   });
 
+  const selectedTestData = tests.find(t => t.id === selectedTest);
+
   // Create test mutation
   const createTestMutation = useMutation({
     mutationFn: async () => {
-      let uploadedFileUrl = null;
-
-      // Upload file if present
-      if (uploadedFile) {
-        const fileExt = uploadedFile.name.split(".").pop();
+      let uploadedFileUrl: string | null = null;
+      if (uploadedTestFile) {
+        const fileExt = uploadedTestFile.name.split(".").pop();
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage
-          .from("test-files")
-          .upload(fileName, uploadedFile);
-
+        const { error: uploadError } = await supabase.storage.from("test-files").upload(fileName, uploadedTestFile);
         if (uploadError) throw uploadError;
         uploadedFileUrl = fileName;
       }
@@ -119,7 +109,7 @@ export default function Tests() {
         total_marks: parseInt(totalMarks),
         grade: grade || null,
         uploaded_file_url: uploadedFileUrl,
-        center_id: user?.center_id, // Attach center_id
+        center_id: user?.center_id,
       }).select().single();
 
       if (error) throw error;
@@ -133,7 +123,7 @@ export default function Tests() {
       setTestSubject("");
       setTotalMarks("");
       setGrade("");
-      setUploadedFile(null);
+      setUploadedTestFile(null);
     },
     onError: (error: any) => {
       console.error("Error creating test:", error);
@@ -141,15 +131,25 @@ export default function Tests() {
     },
   });
 
-  // Add test result mutation
+  // Individual marks entry mutation with optional answer sheet upload
   const addResultMutation = useMutation({
     mutationFn: async () => {
+      let answerSheetUrl: string | null = null;
+      if (answerSheetFile) {
+        const fileExt = answerSheetFile.name.split(".").pop();
+        const fileName = `answersheets/${selectedTest}/${selectedStudentId}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage.from("answersheets").upload(fileName, answerSheetFile, { upsert: true });
+        if (uploadError) throw uploadError;
+        answerSheetUrl = fileName;
+      }
+
       const { data, error } = await supabase.from("test_results").insert({
         test_id: selectedTest,
         student_id: selectedStudentId,
         marks_obtained: parseInt(marksObtained),
         date_taken: resultDate,
         notes: resultNotes || null,
+        answersheet_url: answerSheetUrl,
       });
       if (error) throw error;
       return data;
@@ -160,37 +160,35 @@ export default function Tests() {
       setSelectedStudentId("");
       setMarksObtained("");
       setResultNotes("");
+      setAnswerSheetFile(null);
     },
     onError: (error: any) => {
-      if (error.code === "23505") {
-        toast.error("Marks already recorded for this student");
-      } else {
-        toast.error("Failed to record marks");
-      }
+      if (error.code === "23505") toast.error("Marks already recorded for this student");
+      else toast.error("Failed to record marks");
     },
   });
 
-  // Bulk marks entry mutation
+  // Bulk marks entry mutation (grade-wise)
   const bulkMarksMutation = useMutation({
-    mutationFn: async (marks: Array<{ studentId: string; marks: number }>) => {
-      const records = marks.map((m) => ({
-        test_id: selectedTest,
-        student_id: m.studentId,
-        marks_obtained: m.marks,
-        date_taken: format(new Date(), "yyyy-MM-dd"),
-      }));
+    mutationFn: async (marks: Array<{ studentId: string; marks: number; file?: File }>) => {
+      for (const m of marks) {
+        let answerSheetUrl: string | null = null;
+        if (m.file) {
+          const fileExt = m.file.name.split(".").pop();
+          const fileName = `answersheets/${selectedTest}/${m.studentId}.${fileExt}`;
+          const { error } = await supabase.storage.from("answersheets").upload(fileName, m.file, { upsert: true });
+          if (error) throw error;
+          answerSheetUrl = fileName;
+        }
 
-      // Delete existing records for these students and test
-      const studentIds = marks.map((m) => m.studentId);
-      await supabase
-        .from("test_results")
-        .delete()
-        .eq("test_id", selectedTest)
-        .in("student_id", studentIds);
-
-      // Insert new records
-      const { error } = await supabase.from("test_results").insert(records);
-      if (error) throw error;
+        await supabase.from("test_results").upsert({
+          test_id: selectedTest,
+          student_id: m.studentId,
+          marks_obtained: m.marks,
+          date_taken: format(new Date(), "yyyy-MM-dd"),
+          answersheet_url: answerSheetUrl,
+        }, { onConflict: ["test_id", "student_id"] });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["test-results"] });
@@ -204,10 +202,7 @@ export default function Tests() {
   // Delete test result
   const deleteResultMutation = useMutation({
     mutationFn: async (resultId: string) => {
-      const { error } = await supabase
-        .from("test_results")
-        .delete()
-        .eq("id", resultId);
+      const { error } = await supabase.from("test_results").delete().eq("id", resultId);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -221,31 +216,11 @@ export default function Tests() {
     mutationFn: async (testId: string) => {
       const test = tests.find(t => t.id === testId);
       if (!test) throw new Error("Test not found");
-      
-      // Check permissions: Admin can delete any test, Center can only delete their own
-      if (user?.role !== 'admin' && test.center_id !== user?.center_id) {
-        throw new Error("You don't have permission to delete this test");
-      }
+      if (user?.role !== 'admin' && test.center_id !== user?.center_id) throw new Error("No permission");
 
-      // Delete associated file if exists
-      if (test.uploaded_file_url) {
-        await supabase.storage
-          .from("test-files")
-          .remove([test.uploaded_file_url]);
-      }
-
-      // Delete test results first (cascade)
-      await supabase
-        .from("test_results")
-        .delete()
-        .eq("test_id", testId);
-
-      // Delete the test
-      const { error } = await supabase
-        .from("tests")
-        .delete()
-        .eq("id", testId);
-      
+      if (test.uploaded_file_url) await supabase.storage.from("test-files").remove([test.uploaded_file_url]);
+      await supabase.from("test_results").delete().eq("test_id", testId);
+      const { error } = await supabase.from("tests").delete().eq("id", testId);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -258,358 +233,141 @@ export default function Tests() {
     },
   });
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setUploadedFile(e.target.files[0]);
-    }
+  const handleTestFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) setUploadedTestFile(e.target.files[0]);
   };
 
-  const selectedTestData = tests.find((t) => t.id === selectedTest);
-  const testsWithFiles = tests.filter((t) => t.uploaded_file_url);
+  const handleAnswerSheetUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) setAnswerSheetFile(e.target.files[0]);
+  };
+
+  const testsWithFiles = tests.filter(t => t.uploaded_file_url);
 
   return (
     <div className="space-y-6">
-      {testsWithFiles.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Available Question Papers
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {testsWithFiles.map((test) => (
-                <div
-                  key={test.id}
-                  className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-start gap-3 flex-1">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 flex-shrink-0">
-                        <FileText className="h-5 w-5 text-blue-600" />
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="font-semibold text-sm line-clamp-2">{test.name}</h3>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {test.subject} • {format(new Date(test.date), "MMM d, yyyy")}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  <QuestionPaperViewer
-                    testId={test.id}
-                    testName={test.name}
-                    fileName={test.uploaded_file_url}
-                  />
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Test Management</h1>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowOCRModal(true)}>
-            <FileUp className="mr-2 h-4 w-4" />
-            Upload Test Paper (OCR)
-          </Button>
-          <Dialog open={isAddingTest} onOpenChange={setIsAddingTest}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Create Test
-              </Button>
-            </DialogTrigger>
+      {/* OCR Upload */}
+      <div className="flex gap-2">
+        <Button variant="outline" onClick={() => setShowOCRModal(true)}>
+          <FileUp className="mr-2 h-4 w-4" />
+          Upload Test Paper (OCR)
+        </Button>
+        <Dialog open={isAddingTest} onOpenChange={setIsAddingTest}>
+          <DialogTrigger asChild>
+            <Button><Plus className="mr-2 h-4 w-4" />Create Test</Button>
+          </DialogTrigger>
           <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create New Test</DialogTitle>
-            </DialogHeader>
+            <DialogHeader><DialogTitle>Create Test</DialogTitle></DialogHeader>
             <div className="space-y-4">
-              <div>
-                <Label>Test Name</Label>
-                <Input
-                  value={testName}
-                  onChange={(e) => setTestName(e.target.value)}
-                  placeholder="e.g., Mid-term Math Exam"
-                />
+              <Input placeholder="Test Name" value={testName} onChange={e => setTestName(e.target.value)} />
+              <Input placeholder="Subject" value={testSubject} onChange={e => setTestSubject(e.target.value)} />
+              <div className="grid grid-cols-2 gap-2">
+                <Input type="date" value={testDate} onChange={e => setTestDate(e.target.value)} />
+                <Input type="number" placeholder="Total Marks" value={totalMarks} onChange={e => setTotalMarks(e.target.value)} />
               </div>
-              <div>
-                <Label>Subject</Label>
-                <Input
-                  value={testSubject}
-                  onChange={(e) => setTestSubject(e.target.value)}
-                  placeholder="e.g., Mathematics"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Date</Label>
-                  <Input
-                    type="date"
-                    value={testDate}
-                    onChange={(e) => setTestDate(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label>Total Marks</Label>
-                  <Input
-                    type="number"
-                    value={totalMarks}
-                    onChange={(e) => setTotalMarks(e.target.value)}
-                    placeholder="100"
-                  />
-                </div>
-              </div>
-              <div>
-                <Label>Grade (Optional)</Label>
-                <Input
-                  value={grade}
-                  onChange={(e) => setGrade(e.target.value)}
-                  placeholder="e.g., 10th"
-                />
-              </div>
-              <div>
-                <Label>Upload Test File (Optional)</Label>
-                <Input
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  onChange={handleFileUpload}
-                />
-                {uploadedFile && (
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Selected: {uploadedFile.name}
-                  </p>
-                )}
-              </div>
-              <Button
-                onClick={() => createTestMutation.mutate()}
-                disabled={!testName || !testSubject || !totalMarks || createTestMutation.isPending}
-                className="w-full"
-              >
-                Create Test
-              </Button>
+              <Input placeholder="Grade (Optional)" value={grade} onChange={e => setGrade(e.target.value)} />
+              <Input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={handleTestFileUpload} />
+              {uploadedTestFile && <p>{uploadedTestFile.name}</p>}
+              <Button onClick={() => createTestMutation.mutate()}>Create Test</Button>
             </div>
           </DialogContent>
-          </Dialog>
-        </div>
+        </Dialog>
       </div>
 
+      {/* Test List */}
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
-          <CardHeader>
-            <CardTitle>All Tests</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>All Tests</CardTitle></CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {tests.map((test) => (
-                <div
-                  key={test.id}
-                  className={`flex items-center gap-2 ${
-                    selectedTest === test.id ? "" : ""
-                  }`}
-                >
-                  <button
-                    onClick={() => setSelectedTest(test.id)}
-                    className={`flex-1 text-left p-4 border rounded-lg transition-colors ${
-                      selectedTest === test.id
-                        ? "bg-primary text-primary-foreground"
-                        : "hover:bg-accent"
-                    }`}
-                  >
-                    <div className="font-medium">{test.name}</div>
-                    <div className="text-sm opacity-80">
-                      {test.subject} • {format(new Date(test.date), "PPP")} • {test.total_marks} marks
-                    </div>
+              {tests.map(test => (
+                <div key={test.id} className="flex items-center gap-2">
+                  <button onClick={() => setSelectedTest(test.id)} className="flex-1 text-left p-4 border rounded-lg">
+                    {test.name} • {test.subject} • {format(new Date(test.date), "PPP")}
                   </button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      if (confirm(`Are you sure you want to delete "${test.name}"? This will also delete all associated student results.`)) {
-                        deleteTestMutation.mutate(test.id);
-                      }
-                    }}
-                    title="Delete test"
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => deleteTestMutation.mutate(test.id)}><Trash2 /></Button>
                 </div>
               ))}
-              {tests.length === 0 && (
-                <p className="text-muted-foreground text-center py-8">
-                  No tests created yet
-                </p>
-              )}
             </div>
           </CardContent>
         </Card>
 
+        {/* Marks Entry */}
         {selectedTest && selectedTestData && (
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Enter Marks - {selectedTestData.name}</CardTitle>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowBulkEntry(true)}
-                >
-                  <Users className="mr-2 h-4 w-4" />
-                  Bulk Entry
-                </Button>
+                <div>
+                  <Label>Filter Grade (Bulk)</Label>
+                  <Select value={bulkGradeFilter} onValueChange={setBulkGradeFilter}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Grades</SelectItem>
+                      {Array.from(new Set(students.map(s => s.grade))).map(g => (
+                        <SelectItem key={g} value={g}>{g}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button onClick={() => setShowBulkEntry(true)}><Users /> Bulk Entry</Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div>
-                <Label>Select Student</Label>
-                <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose student" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {students.map((student) => (
-                      <SelectItem key={student.id} value={student.id}>
-                        {student.name} - Grade {student.grade}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Marks Obtained (out of {selectedTestData.total_marks})</Label>
-                <Input
-                  type="number"
-                  value={marksObtained}
-                  onChange={(e) => setMarksObtained(e.target.value)}
-                  max={selectedTestData.total_marks}
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <Label>Test Date</Label>
-                <Input
-                  type="date"
-                  value={resultDate}
-                  onChange={(e) => setResultDate(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label>Notes (Optional)</Label>
-                <Textarea
-                  value={resultNotes}
-                  onChange={(e) => setResultNotes(e.target.value)}
-                  placeholder="Any additional notes..."
-                  rows={2}
-                />
-              </div>
-              <Button
-                onClick={() => addResultMutation.mutate()}
-                disabled={!selectedStudentId || !marksObtained || addResultMutation.isPending}
-                className="w-full"
-              >
-                Save Marks
-              </Button>
+              <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
+                <SelectTrigger><SelectValue placeholder="Choose student" /></SelectTrigger>
+                <SelectContent>
+                  {students.map(s => (
+                    <SelectItem key={s.id} value={s.id}>{s.name} - Grade {s.grade}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input type="number" placeholder={`Marks out of ${selectedTestData.total_marks}`} value={marksObtained} onChange={e => setMarksObtained(e.target.value)} />
+              <Input type="date" value={resultDate} onChange={e => setResultDate(e.target.value)} />
+              <Textarea placeholder="Notes (Optional)" value={resultNotes} onChange={e => setResultNotes(e.target.value)} rows={2} />
+              <Input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={handleAnswerSheetUpload} />
+              <Button onClick={() => addResultMutation.mutate()}>Save Marks</Button>
             </CardContent>
           </Card>
         )}
       </div>
 
-      {selectedTest && selectedTestData && selectedTestData.uploaded_file_url && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Question Paper
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-100">
-                    <FileText className="h-6 w-6 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-900">Question Paper Available</p>
-                    <p className="text-sm text-gray-600">
-                      Uploaded: {format(new Date(selectedTestData.created_at), "PPP")}
-                    </p>
-                  </div>
-                </div>
-                <QuestionPaperViewer
-                  testId={selectedTest}
-                  testName={selectedTestData.name}
-                  fileName={selectedTestData.uploaded_file_url}
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
+      {/* Test Results */}
       {selectedTest && testResults.length > 0 && (
         <Card>
-          <CardHeader>
-            <CardTitle>Test Results</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Test Results</CardTitle></CardHeader>
           <CardContent>
-            <div className="border rounded-lg overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-muted">
-                  <tr>
-                    <th className="px-4 py-2 text-left">Student</th>
-                    <th className="px-4 py-2 text-left">Grade</th>
-                    <th className="px-4 py-2 text-right">Marks</th>
-                    <th className="px-4 py-2 text-right">Percentage</th>
-                    <th className="px-4 py-2 text-center">Actions</th>
+            <table className="w-full">
+              <thead>
+                <tr><th>Student</th><th>Grade</th><th>Marks</th><th>%</th><th>Answer Sheet</th><th>Action</th></tr>
+              </thead>
+              <tbody>
+                {testResults.map(r => (
+                  <tr key={r.id}>
+                    <td>{r.students?.name}</td>
+                    <td>{r.students?.grade}</td>
+                    <td>{r.marks_obtained}/{selectedTestData.total_marks}</td>
+                    <td>{Math.round((r.marks_obtained / selectedTestData.total_marks) * 100)}%</td>
+                    <td>
+                      {r.answersheet_url && (
+                        <a href={supabase.storage.from("answersheets").getPublicUrl(r.answersheet_url).data.publicUrl} target="_blank" rel="noreferrer">View</a>
+                      )}
+                    </td>
+                    <td><Button variant="ghost" size="sm" onClick={() => deleteResultMutation.mutate(r.id)}><Trash2 /></Button></td>
                   </tr>
-                </thead>
-                <tbody>
-                  {testResults.map((result) => (
-                    <tr key={result.id} className="border-t">
-                      <td className="px-4 py-2">{result.students?.name}</td>
-                      <td className="px-4 py-2">{result.students?.grade}</td>
-                      <td className="px-4 py-2 text-right">
-                        {result.marks_obtained}/{selectedTestData?.total_marks}
-                      </td>
-                      <td className="px-4 py-2 text-right">
-                        {Math.round((result.marks_obtained / (selectedTestData?.total_marks || 1)) * 100)}%
-                      </td>
-                      <td className="px-4 py-2 text-center">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => deleteResultMutation.mutate(result.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </CardContent>
         </Card>
       )}
 
-      <OCRModal
-        open={showOCRModal}
-        onOpenChange={setShowOCRModal}
-        onSave={(text) => {
-          setExtractedTestContent(text);
-          toast.success("Test content extracted! You can now use this for reference.");
-        }}
-      />
+      <OCRModal open={showOCRModal} onOpenChange={setShowOCRModal} onSave={text => { setExtractedTestContent(text); toast.success("Test content extracted!"); }} />
 
       {selectedTest && selectedTestData && (
         <BulkMarksEntry
           open={showBulkEntry}
           onOpenChange={setShowBulkEntry}
-          students={students}
+          students={filteredStudents}
           testId={selectedTest}
           totalMarks={selectedTestData.total_marks}
           onSave={(marks) => bulkMarksMutation.mutate(marks)}
