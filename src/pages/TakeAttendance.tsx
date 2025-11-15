@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -32,7 +32,6 @@ export default function TakeAttendance() {
   const { user } = useAuth();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [attendance, setAttendance] = useState<Record<string, AttendanceRecord>>({});
-  const [selectedGrade, setSelectedGrade] = useState<string>("All");
 
   const dateStr = format(selectedDate, "yyyy-MM-dd");
 
@@ -43,11 +42,12 @@ export default function TakeAttendance() {
         .from("students")
         .select("id, name, grade")
         .order("name");
-
-      if (user?.role !== "admin" && user?.center_id) {
-        query = query.eq("center_id", user.center_id);
+      
+      // Filter by center_id if user is not admin
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
       }
-
+      
       const { data, error } = await query;
       if (error) throw error;
       return data as Student[];
@@ -68,7 +68,7 @@ export default function TakeAttendance() {
   });
 
   // Initialize attendance state when data is loaded
-  useMemo(() => {
+  useState(() => {
     if (existingAttendance && students) {
       const newAttendance: Record<string, AttendanceRecord> = {};
       students.forEach((student) => {
@@ -82,7 +82,7 @@ export default function TakeAttendance() {
       });
       setAttendance(newAttendance);
     }
-  }, [existingAttendance, students]);
+  });
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -108,7 +108,9 @@ export default function TakeAttendance() {
       queryClient.invalidateQueries({ queryKey: ["today-attendance"] });
       toast.success("Attendance saved successfully!");
     },
-    onError: () => toast.error("Failed to save attendance"),
+    onError: () => {
+      toast.error("Failed to save attendance");
+    },
   });
 
   const handleToggle = (studentId: string) => {
@@ -140,46 +142,29 @@ export default function TakeAttendance() {
     if (!students) return;
     const newAttendance: Record<string, AttendanceRecord> = {};
     students.forEach((student) => {
-      if (selectedGrade === "All" || student.grade === selectedGrade) {
-        newAttendance[student.id] = {
-          present: true,
-          timeIn: attendance[student.id]?.timeIn || "",
-          timeOut: attendance[student.id]?.timeOut || "",
-          studentId: student.id,
-        };
-      }
+      newAttendance[student.id] = {
+        present: true,
+        timeIn: attendance[student.id]?.timeIn || "",
+        timeOut: attendance[student.id]?.timeOut || "",
+        studentId: student.id,
+      };
     });
-    setAttendance((prev) => ({ ...prev, ...newAttendance }));
+    setAttendance(newAttendance);
   };
 
   const markAllAbsent = () => {
     if (!students) return;
     const newAttendance: Record<string, AttendanceRecord> = {};
     students.forEach((student) => {
-      if (selectedGrade === "All" || student.grade === selectedGrade) {
-        newAttendance[student.id] = {
-          present: false,
-          timeIn: "",
-          timeOut: "",
-          studentId: student.id,
-        };
-      }
+      newAttendance[student.id] = {
+        present: false,
+        timeIn: "",
+        timeOut: "",
+        studentId: student.id,
+      };
     });
-    setAttendance((prev) => ({ ...prev, ...newAttendance }));
+    setAttendance(newAttendance);
   };
-
-  // Filter students by selected grade
-  const filteredStudents = useMemo(() => {
-    if (!students) return [];
-    if (selectedGrade === "All") return students;
-    return students.filter((s) => s.grade === selectedGrade);
-  }, [students, selectedGrade]);
-
-  const grades = useMemo(() => {
-    if (!students) return [];
-    const uniqueGrades = Array.from(new Set(students.map((s) => s.grade)));
-    return uniqueGrades.sort();
-  }, [students]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -225,28 +210,6 @@ export default function TakeAttendance() {
         </CardContent>
       </Card>
 
-      {/* Grade Filter Dropdown */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Filter by Grade</CardTitle>
-          <CardDescription>Select a grade to filter students</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <select
-            className="border rounded p-2"
-            value={selectedGrade}
-            onChange={(e) => setSelectedGrade(e.target.value)}
-          >
-            <option value="All">All Grades</option>
-            {grades.map((grade) => (
-              <option key={grade} value={grade}>
-                {grade}
-              </option>
-            ))}
-          </select>
-        </CardContent>
-      </Card>
-
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -265,10 +228,10 @@ export default function TakeAttendance() {
           </div>
         </CardHeader>
         <CardContent>
-          {filteredStudents.length > 0 ? (
+          {students && students.length > 0 ? (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-3">
-                {filteredStudents.map((student) => (
+                {students.map((student) => (
                   <div
                     key={student.id}
                     className="rounded-lg border p-4 transition-colors hover:bg-muted/50"
@@ -324,7 +287,7 @@ export default function TakeAttendance() {
             </form>
           ) : (
             <p className="text-center text-muted-foreground">
-              No students registered for this grade.
+              No students registered yet. Please register students first.
             </p>
           )}
         </CardContent>
