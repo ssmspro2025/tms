@@ -3,379 +3,343 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { FileUp, Plus, Trash2, Users, FileText } from "lucide-react";
-import { format } from "date-fns";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import OCRModal from "@/components/OCRModal";
-import QuestionPaperViewer from "@/components/QuestionPaperViewer";
+import { CalendarIcon, Download, Brain, BookOpen, FileText, Loader2 } from "lucide-react";
+import { format, startOfMonth, endOfMonth } from "date-fns";
 
-// BulkMarksEntry with answersheet upload
-function BulkMarksEntry({ open, onOpenChange, students, testId, totalMarks, onSave }: any) {
-  const [selectedGrade, setSelectedGrade] = useState("all");
-  const [marksState, setMarksState] = useState<Record<string, { marks: string; file?: File }>>({});
-
-  const gradesList = Array.from(new Set(students.map((s: any) => s.grade).filter(Boolean)));
-  const filteredStudents = students.filter((s: any) => selectedGrade === "all" || s.grade === selectedGrade);
-
-  const handleMarksChange = (studentId: string, value: string) => {
-    setMarksState(prev => ({ ...prev, [studentId]: { ...prev[studentId], marks: value } }));
-  };
-
-  const handleFileChange = (studentId: string, file?: File) => {
-    setMarksState(prev => ({ ...prev, [studentId]: { ...prev[studentId], file } }));
-  };
-
-  const handleSave = () => {
-    const marksArray = Object.entries(marksState).map(([studentId, data]) => ({
-      studentId,
-      marks: parseInt(data.marks),
-      file: data.file,
-    }));
-    onSave(marksArray);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl">
-        <DialogHeader>
-          <DialogTitle>Bulk Marks Entry</DialogTitle>
-        </DialogHeader>
-
-        <div className="mb-4">
-          <Label>Filter by Grade</Label>
-          <Select value={selectedGrade} onValueChange={setSelectedGrade}>
-            <SelectTrigger><SelectValue placeholder="All Grades" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Grades</SelectItem>
-              {gradesList.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="max-h-[500px] overflow-y-auto">
-          {filteredStudents.map((student: any) => (
-            <div key={student.id} className="flex items-center gap-4 mb-3 border rounded p-2">
-              <div className="flex-1">
-                <p className="font-medium">{student.name}</p>
-                <p className="text-sm text-muted-foreground">Grade {student.grade}</p>
-              </div>
-              <div>
-                <Label>Marks</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={totalMarks}
-                  value={marksState[student.id]?.marks || ""}
-                  onChange={e => handleMarksChange(student.id, e.target.value)}
-                  placeholder={`0-${totalMarks}`}
-                />
-              </div>
-              <div>
-                <Label>Answer Sheet (Optional)</Label>
-                <Input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e => handleFileChange(student.id, e.target.files?.[0])} />
-                {marksState[student.id]?.file && (
-                  <p className="text-xs text-muted-foreground mt-1">{marksState[student.id].file?.name}</p>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <Button className="mt-4 w-full" onClick={handleSave}>Save All</Button>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// Main Tests Page
-export default function Tests() {
-  const queryClient = useQueryClient();
+export default function StudentReport() {
   const { user } = useAuth();
-  const [isAddingTest, setIsAddingTest] = useState(false);
-  const [selectedTest, setSelectedTest] = useState<string>("");
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [showOCRModal, setShowOCRModal] = useState(false);
-  const [showBulkEntry, setShowBulkEntry] = useState(false);
+  const queryClient = useQueryClient();
 
-  // Form states
-  const [testName, setTestName] = useState("");
-  const [testSubject, setTestSubject] = useState("");
-  const [testDate, setTestDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [totalMarks, setTotalMarks] = useState("");
-  const [grade, setGrade] = useState("");
-
-  // Student marks states
-  const [selectedStudentId, setSelectedStudentId] = useState("");
-  const [marksObtained, setMarksObtained] = useState("");
-  const [resultDate, setResultDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [resultNotes, setResultNotes] = useState("");
-
-  // Filters for test list
-  const [filterGrade, setFilterGrade] = useState("all");
-  const [filterSubject, setFilterSubject] = useState("all");
-
-  // Fetch tests
-  const { data: tests = [] } = useQuery({
-    queryKey: ["tests", user?.center_id],
-    queryFn: async () => {
-      let query = supabase.from("tests").select("*").order("date", { ascending: false });
-      if (user?.role !== "admin" && user?.center_id) query = query.eq('center_id', user.center_id);
-      const { data, error } = await query;
-      if (error) throw error;
-      return data;
-    },
+  const [selectedGrade, setSelectedGrade] = useState<string>("all");
+  const [selectedStudentId, setSelectedStudentId] = useState<string>("");
+  const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
+    from: startOfMonth(new Date()),
+    to: endOfMonth(new Date()),
   });
+  const [subjectFilter, setSubjectFilter] = useState<string>("all");
+  const [chapterSubjectFilter, setChapterSubjectFilter] = useState<string>("all");
+  const [aiSummary, setAiSummary] = useState<string>("");
 
   // Fetch students
   const { data: students = [] } = useQuery({
-    queryKey: ["students", user?.center_id],
+    queryKey: ["students", user?.center_id, selectedGrade],
     queryFn: async () => {
       let query = supabase.from("students").select("*").order("name");
-      if (user?.role !== "admin" && user?.center_id) query = query.eq('center_id', user.center_id);
+      if (user?.role !== "admin" && user?.center_id) query = query.eq("center_id", user.center_id);
+      if (selectedGrade !== "all") query = query.eq("grade", selectedGrade);
       const { data, error } = await query;
       if (error) throw error;
       return data;
     },
   });
 
-  // Fetch test results
-  const { data: testResults = [] } = useQuery({
-    queryKey: ["test-results", selectedTest],
+  const selectedStudent = students.find((s) => s.id === selectedStudentId);
+
+  // Attendance
+  const { data: attendanceData = [] } = useQuery({
+    queryKey: ["attendance", selectedStudentId, dateRange],
     queryFn: async () => {
-      if (!selectedTest) return [];
+      if (!selectedStudentId) return [];
       const { data, error } = await supabase
-        .from("test_results")
-        .select("*, students(name, grade)")
-        .eq("test_id", selectedTest)
-        .order("marks_obtained", { ascending: false });
+        .from("attendance")
+        .select("*")
+        .eq("student_id", selectedStudentId)
+        .gte("date", format(dateRange.from, "yyyy-MM-dd"))
+        .lte("date", format(dateRange.to, "yyyy-MM-dd"))
+        .order("date");
       if (error) throw error;
       return data;
     },
-    enabled: !!selectedTest,
+    enabled: !!selectedStudentId,
   });
 
-  const createTestMutation = useMutation({
-    mutationFn: async () => {
-      let uploadedFileUrl = null;
-      if (uploadedFile) {
-        const fileExt = uploadedFile.name.split(".").pop();
-        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage.from("test-files").upload(fileName, uploadedFile);
-        if (uploadError) throw uploadError;
-        uploadedFileUrl = fileName;
-      }
-      const { data, error } = await supabase.from("tests").insert({
-        name: testName,
-        subject: testSubject,
-        date: testDate,
-        total_marks: parseInt(totalMarks),
-        grade: grade || null,
-        uploaded_file_url: uploadedFileUrl,
-        center_id: user?.center_id,
-      }).select().single();
+  // Chapters
+  const { data: chapterProgress = [] } = useQuery({
+    queryKey: ["chapters", selectedStudentId, chapterSubjectFilter],
+    queryFn: async () => {
+      if (!selectedStudentId) return [];
+      let query = supabase
+        .from("student_chapters")
+        .select("*, chapters(*)")
+        .eq("student_id", selectedStudentId);
+      if (chapterSubjectFilter !== "all") query = query.eq("chapters.subject", chapterSubjectFilter);
+      const { data, error } = await query.order("date_completed", { ascending: false });
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tests"] });
-      toast.success("Test created successfully");
-      setIsAddingTest(false);
-      setTestName(""); setTestSubject(""); setTotalMarks(""); setGrade(""); setUploadedFile(null);
-    },
-    onError: (error: any) => {
-      toast.error("Failed to create test");
+    enabled: !!selectedStudentId,
+  });
+
+  const { data: allChapters = [] } = useQuery({
+    queryKey: ["all-chapters", user?.center_id],
+    queryFn: async () => {
+      let query = supabase.from("chapters").select("*");
+      if (user?.role !== "admin" && user?.center_id) query = query.eq("center_id", user.center_id);
+      const { data, error } = await query;
+      if (error) throw error;
+      return data;
     },
   });
 
-  const addResultMutation = useMutation({
+  // Test results
+  const { data: testResults = [] } = useQuery({
+    queryKey: ["student-test-results", selectedStudentId, subjectFilter],
+    queryFn: async () => {
+      if (!selectedStudentId) return [];
+      let query = supabase.from("test_results").select("*, tests(*)").eq("student_id", selectedStudentId);
+      if (subjectFilter !== "all") query = query.eq("tests.subject", subjectFilter);
+      const { data, error } = await query.order("date_taken", { ascending: false });
+      if (error) throw error;
+      // Map answersheet public URL
+      return data.map(r => ({
+        ...r,
+        answersheet_link: r.answersheet_url
+          ? supabase.storage.from("test-files").getPublicUrl(r.answersheet_url).data.publicUrl
+          : null,
+      }));
+    },
+    enabled: !!selectedStudentId,
+  });
+
+  // Statistics
+  const totalDays = attendanceData.length;
+  const presentDays = attendanceData.filter(a => a.status === "Present").length;
+  const attendancePercentage = totalDays ? Math.round((presentDays / totalDays) * 100) : 0;
+
+  const totalTests = testResults.length;
+  const totalMarksObtained = testResults.reduce((sum, r) => sum + (r.marks_obtained || 0), 0);
+  const totalMaxMarks = testResults.reduce((sum, r) => sum + (r.tests?.total_marks || 0), 0);
+  const averagePercentage = totalMaxMarks ? Math.round((totalMarksObtained / totalMaxMarks) * 100) : 0;
+
+  const completedChaptersCount = chapterProgress.filter(cp => cp.completed).length;
+  const totalChaptersCount = allChapters.length;
+  const chapterCompletionPercentage = totalChaptersCount
+    ? Math.round((completedChaptersCount / totalChaptersCount) * 100)
+    : 0;
+
+  const subjects = Array.from(new Set([
+    ...chapterProgress.map(c => c.chapters?.subject).filter(Boolean),
+    ...testResults.map(t => t.tests?.subject).filter(Boolean)
+  ]));
+
+  // AI Summary
+  const generateSummaryMutation = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.from("test_results").insert({
-        test_id: selectedTest,
-        student_id: selectedStudentId,
-        marks_obtained: parseInt(marksObtained),
-        date_taken: resultDate,
-        notes: resultNotes || null,
+      const { data, error } = await supabase.functions.invoke("ai-student-summary", {
+        body: { studentId: selectedStudentId },
       });
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["test-results"] });
-      toast.success("Marks recorded successfully");
-      setSelectedStudentId(""); setMarksObtained(""); setResultNotes("");
+    onSuccess: data => {
+      setAiSummary(data.summary);
+      toast.success("AI summary generated successfully");
     },
-    onError: (error: any) => {
-      toast.error("Failed to record marks");
-    },
+    onError: (error: any) => toast.error("Failed to generate AI summary"),
   });
 
-  const bulkMarksMutation = useMutation({
-    mutationFn: async (marks: Array<{ studentId: string; marks: number; file?: File }>) => {
-      for (const m of marks) {
-        // delete existing
-        await supabase.from("test_results").delete().eq("test_id", selectedTest).eq("student_id", m.studentId);
-        // upload file if exists
-        let fileUrl = null;
-        if (m.file) {
-          const fileExt = m.file.name.split(".").pop();
-          const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-          await supabase.storage.from("test-files").upload(fileName, m.file);
-          fileUrl = fileName;
-        }
-        await supabase.from("test_results").insert({
-          test_id: selectedTest,
-          student_id: m.studentId,
-          marks_obtained: m.marks,
-          date_taken: format(new Date(), "yyyy-MM-dd"),
-          answersheet_url: fileUrl,
-        });
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["test-results"] });
-      toast.success("Bulk marks saved successfully");
-    },
-    onError: () => toast.error("Failed to save bulk marks"),
-  });
+  // Export CSV
+  const exportCSV = () => {
+    if (!selectedStudent) return;
+    const csvContent = [
+      ["Student Report"],
+      ["Name", selectedStudent.name],
+      ["Grade", selectedStudent.grade],
+      [""],
+      ["Attendance Summary"],
+      ["Total Days", totalDays],
+      ["Present", presentDays],
+      ["Absent", totalDays - presentDays],
+      ["Percentage", attendancePercentage + "%"],
+      [""],
+      ["Test Results"],
+      ["Test Name", "Subject", "Marks Obtained", "Total Marks", "Date", "Answer Sheet"],
+      ...testResults.map(r => [
+        r.tests?.name,
+        r.tests?.subject,
+        r.marks_obtained,
+        r.tests?.total_marks,
+        format(new Date(r.date_taken), "PPP"),
+        r.answersheet_link || ""
+      ])
+    ].map(row => row.join(",")).join("\n");
 
-  const deleteTestMutation = useMutation({
-    mutationFn: async (testId: string) => {
-      const test = tests.find(t => t.id === testId);
-      if (!test) throw new Error("Test not found");
-      if (user?.role !== 'admin' && test.center_id !== user?.center_id) throw new Error("No permission");
-      if (test.uploaded_file_url) await supabase.storage.from("test-files").remove([test.uploaded_file_url]);
-      await supabase.from("test_results").delete().eq("test_id", testId);
-      await supabase.from("tests").delete().eq("id", testId);
-    },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["tests"] }); setSelectedTest(""); toast.success("Test deleted"); },
-    onError: (error: any) => toast.error(error.message || "Failed to delete test"),
-  });
-
-  const deleteResultMutation = useMutation({
-    mutationFn: async (resultId: string) => {
-      const { error } = await supabase.from("test_results").delete().eq("id", resultId);
-      if (error) throw error;
-    },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["test-results"] }); toast.success("Result deleted"); },
-  });
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) setUploadedFile(e.target.files[0]);
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${selectedStudent.name}_report.csv`;
+    a.click();
   };
-
-  // Grade & Subject filters for test list
-  const filteredTests = tests.filter(t => 
-    (filterGrade === "all" || t.grade === filterGrade) &&
-    (filterSubject === "all" || t.subject === filterSubject)
-  );
-
-  const selectedTestData = tests.find(t => t.id === selectedTest);
-
-  const subjectsList = Array.from(new Set(tests.map(t => t.subject).filter(Boolean)));
-  const gradesListTests = Array.from(new Set(tests.map(t => t.grade).filter(Boolean)));
 
   return (
     <div className="space-y-6">
-
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-3xl font-bold">Test Management</h1>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowOCRModal(true)}>
-            <FileUp className="mr-2 h-4 w-4" />
-            Upload Test Paper (OCR)
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">Student Report</h1>
+        {selectedStudentId && (
+          <Button onClick={exportCSV} variant="outline">
+            <Download className="mr-2 h-4 w-4" />
+            Export CSV
           </Button>
-          <Dialog open={isAddingTest} onOpenChange={setIsAddingTest}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" /> Create Test
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Create New Test</DialogTitle></DialogHeader>
-              <div className="space-y-4">
-                <Input placeholder="Test Name" value={testName} onChange={e => setTestName(e.target.value)} />
-                <Input placeholder="Subject" value={testSubject} onChange={e => setTestSubject(e.target.value)} />
-                <div className="grid grid-cols-2 gap-4">
-                  <Input type="date" value={testDate} onChange={e => setTestDate(e.target.value)} />
-                  <Input type="number" placeholder="Total Marks" value={totalMarks} onChange={e => setTotalMarks(e.target.value)} />
-                </div>
-                <Input placeholder="Grade" value={grade} onChange={e => setGrade(e.target.value)} />
-                <Input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={handleFileUpload} />
-                {uploadedFile && <p>{uploadedFile.name}</p>}
-                <Button onClick={() => createTestMutation.mutate()}>Create Test</Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
-
-      {/* Filters for test list */}
-      <div className="flex gap-4">
-        <Select value={filterGrade} onValueChange={setFilterGrade}>
-          <SelectTrigger><SelectValue placeholder="Grade Filter" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Grades</SelectItem>
-            {gradesListTests.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={filterSubject} onValueChange={setFilterSubject}>
-          <SelectTrigger><SelectValue placeholder="Subject Filter" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Subjects</SelectItem>
-            {subjectsList.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Tests List */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader><CardTitle>All Tests</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            {filteredTests.map(test => (
-              <div key={test.id} className="flex items-center gap-2">
-                <button onClick={() => setSelectedTest(test.id)} className="flex-1 text-left p-4 border rounded-lg hover:bg-accent">
-                  <div>{test.name}</div>
-                  <div className="text-sm">{test.subject} • {format(new Date(test.date), "PPP")} • {test.total_marks} marks</div>
-                </button>
-                <Button variant="ghost" onClick={() => deleteTestMutation.mutate(test.id)}><Trash2 /></Button>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        {selectedTest && selectedTestData && (
-          <Card>
-            <CardHeader className="flex justify-between items-center">
-              <CardTitle>Bulk Marks Entry - {selectedTestData.name}</CardTitle>
-              <Button onClick={() => setShowBulkEntry(true)} variant="outline"><Users className="mr-2 h-4 w-4" />Bulk Entry</Button>
-            </CardHeader>
-          </Card>
         )}
       </div>
 
-      {showBulkEntry && selectedTest && selectedTestData && (
-        <BulkMarksEntry
-          open={showBulkEntry}
-          onOpenChange={setShowBulkEntry}
-          students={students}
-          testId={selectedTest}
-          totalMarks={selectedTestData.total_marks}
-          onSave={(marks) => bulkMarksMutation.mutate(marks)}
-        />
-      )}
+      {/* Filters */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle>Select Grade</CardTitle></CardHeader>
+          <CardContent>
+            <Select value={selectedGrade} onValueChange={setSelectedGrade}>
+              <SelectTrigger><SelectValue placeholder="All Grades" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Grades</SelectItem>
+                {[...new Set(students.map(s => s.grade))].map(g => (
+                  <SelectItem key={g} value={g}>{g}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>Select Student</CardTitle></CardHeader>
+          <CardContent>
+            <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
+              <SelectTrigger><SelectValue placeholder="Choose a student" /></SelectTrigger>
+              <SelectContent>
+                {students.map(s => (
+                  <SelectItem key={s.id} value={s.id}>{s.name} - Grade {s.grade}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
+      </div>
 
-      <OCRModal
-        open={showOCRModal}
-        onOpenChange={setShowOCRModal}
-        onSave={(text) => toast.success("OCR Text Extracted!")}
-      />
+      {selectedStudent && (
+        <>
+          {/* Date & Subject Filter */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardContent className="pt-6">
+                <Label>Date Range</Label>
+                <div className="flex gap-2">
+                  <Input type="date" value={format(dateRange.from, "yyyy-MM-dd")}
+                    onChange={e => setDateRange(prev => ({ ...prev, from: new Date(e.target.value) }))} />
+                  <Input type="date" value={format(dateRange.to, "yyyy-MM-dd")}
+                    onChange={e => setDateRange(prev => ({ ...prev, to: new Date(e.target.value) }))} />
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <Label>Filter Test Subject</Label>
+                <Select value={subjectFilter} onValueChange={setSubjectFilter}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Subjects</SelectItem>
+                    {subjects.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Attendance */}
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2"><CalendarIcon className="h-5 w-5" />Attendance Overview</CardTitle></CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-4 mb-6">
+                <div className="space-y-1"><p className="text-sm text-muted-foreground">Total Days</p><p className="text-2xl font-bold">{totalDays}</p></div>
+                <div className="space-y-1"><p className="text-sm text-muted-foreground">Present</p><p className="text-2xl font-bold text-green-600">{presentDays}</p></div>
+                <div className="space-y-1"><p className="text-sm text-muted-foreground">Absent</p><p className="text-2xl font-bold text-red-600">{totalDays - presentDays}</p></div>
+                <div className="space-y-1"><p className="text-sm text-muted-foreground">Attendance %</p><p className="text-2xl font-bold">{attendancePercentage}%</p></div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Chapter Progress */}
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2"><BookOpen className="h-5 w-5" />Chapter Progress</CardTitle></CardHeader>
+            <CardContent>
+              <div className="mb-4">
+                <Label>Filter Chapter Subject</Label>
+                <Select value={chapterSubjectFilter} onValueChange={setChapterSubjectFilter}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Subjects</SelectItem>
+                    {subjects.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-4 md:grid-cols-3 mb-4">
+                <div className="space-y-1"><p className="text-sm text-muted-foreground">Total Chapters</p><p className="text-2xl font-bold">{totalChaptersCount}</p></div>
+                <div className="space-y-1"><p className="text-sm text-muted-foreground">Completed</p><p className="text-2xl font-bold text-green-600">{completedChaptersCount}</p></div>
+                <div className="space-y-1"><p className="text-sm text-muted-foreground">Progress</p><p className="text-2xl font-bold">{chapterCompletionPercentage}%</p></div>
+              </div>
+              {chapterProgress.map(cp => (
+                <div key={cp.id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <p className="font-medium">{cp.chapters?.chapter_name}</p>
+                    <p className="text-sm text-muted-foreground">{cp.chapters?.subject} • {format(new Date(cp.date_completed), "PPP")}</p>
+                  </div>
+                  <div className={`px-3 py-1 rounded-full text-xs font-medium ${cp.completed ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}`}>
+                    {cp.completed ? "Completed" : "In Progress"}
+                  </div>
+                </div>
+              ))}
+              {!chapterProgress.length && <p className="text-center py-8 text-muted-foreground">No chapters recorded</p>}
+            </CardContent>
+          </Card>
+
+          {/* Test Results */}
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" />Test Results</CardTitle></CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-3 mb-6">
+                <div className="space-y-1"><p className="text-sm text-muted-foreground">Total Tests</p><p className="text-2xl font-bold">{totalTests}</p></div>
+                <div className="space-y-1"><p className="text-sm text-muted-foreground">Average Score</p><p className="text-2xl font-bold">{averagePercentage}%</p></div>
+                <div className="space-y-1"><p className="text-sm text-muted-foreground">Total Marks</p><p className="text-2xl font-bold">{totalMarksObtained}/{totalMaxMarks}</p></div>
+              </div>
+              {testResults.map(r => (
+                <div key={r.id} className="flex items-center justify-between p-4 border rounded-lg">
+                  <div>
+                    <p className="font-medium">{r.tests?.name}</p>
+                    <p className="text-sm text-muted-foreground">{r.tests?.subject} • {format(new Date(r.date_taken), "PPP")}</p>
+                  </div>
+                  <div className="text-right space-y-1">
+                    <p className="text-lg font-bold">{r.marks_obtained}/{r.tests?.total_marks}</p>
+                    <p className="text-sm">{Math.round((r.marks_obtained / (r.tests?.total_marks || 1)) * 100)}%</p>
+                    {r.answersheet_link && <a href={r.answersheet_link} target="_blank" className="text-xs text-blue-600 underline">View Answer Sheet</a>}
+                  </div>
+                </div>
+              ))}
+              {!testResults.length && <p className="text-center py-8 text-muted-foreground">No test results recorded yet</p>}
+            </CardContent>
+          </Card>
+
+          {/* AI Summary */}
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2"><Brain className="h-5 w-5" />AI Summary</CardTitle></CardHeader>
+            <CardContent>
+              <div className="flex gap-2 mb-4">
+                <Button onClick={() => generateSummaryMutation.mutate()} disabled={generateSummaryMutation.isLoading}>
+                  {generateSummaryMutation.isLoading
+                    ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating...</>
+                    : "Generate Summary"}
+                </Button>
+              </div>
+              <Textarea value={aiSummary} readOnly placeholder="AI summary will appear here..." />
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }
