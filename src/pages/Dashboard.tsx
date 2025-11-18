@@ -24,7 +24,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Users,
   CheckCircle2,
@@ -40,7 +39,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 
 export default function Dashboard() {
@@ -65,12 +63,10 @@ export default function Dashboard() {
     enabled: !!user && !loading,
   });
 
-  // Filtered students by grade
   const filteredStudents = students.filter(
     (s) => gradeFilter === "all" || s.grade === gradeFilter
   );
 
-  // Grades for filter
   const grades = [...new Set(students.map((s) => s.grade))];
 
   // Fetch attendance
@@ -89,7 +85,7 @@ export default function Dashboard() {
     enabled: students.length > 0,
   });
 
-  // Compute statistics
+  // Statistics
   const presentToday = students.filter((student) =>
     allAttendance.some(
       (att) =>
@@ -115,15 +111,13 @@ export default function Dashboard() {
     ? Math.round((absentCount / totalStudents) * 100)
     : 0;
 
-  // Prepare data for Highest Absentee Table
   const studentAttendanceSummary = students.map((student) => {
     const studentAttendance = allAttendance.filter(
       (a) => a.student_id === student.id
     );
     const present = studentAttendance.filter((a) => a.status === "Present")
       .length;
-    const absent = studentAttendance.filter((a) => a.status === "Absent")
-      .length;
+    const absent = studentAttendance.filter((a) => a.status === "Absent").length;
     const total = present + absent;
     const percentage = total > 0 ? Math.round((absent / total) * 100) : 0;
     return { ...student, present, absent, total, percentage };
@@ -133,7 +127,7 @@ export default function Dashboard() {
     .sort((a, b) => b.percentage - a.percentage)
     .filter((s) => gradeFilter === "all" || s.grade === gradeFilter);
 
-  // Fetch student-specific data when selected
+  // Student-specific data
   const studentId = selectedStudent?.id;
 
   const { data: attendanceData = [] } = useQuery({
@@ -222,34 +216,10 @@ export default function Dashboard() {
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         {[
-          {
-            title: "Total Students",
-            value: totalStudents,
-            icon: Users,
-            color: "text-primary",
-            bgColor: "bg-primary/10",
-          },
-          {
-            title: "Present Today",
-            value: presentCount,
-            icon: CheckCircle2,
-            color: "text-secondary",
-            bgColor: "bg-secondary/10",
-          },
-          {
-            title: "Absent Today",
-            value: absentCount,
-            icon: XCircle,
-            color: "text-destructive",
-            bgColor: "bg-destructive/10",
-          },
-          {
-            title: "Absent Rate",
-            value: `${absentRate}%`,
-            icon: TrendingUp,
-            color: "text-accent",
-            bgColor: "bg-accent/10",
-          },
+          { title: "Total Students", value: totalStudents, icon: Users, color: "text-primary", bgColor: "bg-primary/10" },
+          { title: "Present Today", value: presentCount, icon: CheckCircle2, color: "text-secondary", bgColor: "bg-secondary/10" },
+          { title: "Absent Today", value: absentCount, icon: XCircle, color: "text-destructive", bgColor: "bg-destructive/10" },
+          { title: "Absent Rate", value: `${absentRate}%`, icon: TrendingUp, color: "text-accent", bgColor: "bg-accent/10" },
         ].map((stat) => {
           const Icon = stat.icon;
           return (
@@ -287,7 +257,7 @@ export default function Dashboard() {
 
       {/* Tables side by side */}
       <div className="flex gap-6 overflow-x-auto">
-        {/* Absent Today Table */}
+        {/* Absent Today */}
         <Card className="flex-1">
           <CardHeader>
             <CardTitle>Absent Today</CardTitle>
@@ -325,7 +295,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Highest Absentee Table */}
+        {/* Highest Absentee */}
         <Card className="flex-1">
           <CardHeader>
             <CardTitle>Highest Absentee</CardTitle>
@@ -363,15 +333,15 @@ export default function Dashboard() {
           open={!!selectedStudent}
           onOpenChange={() => setSelectedStudent(null)}
         >
-          <DialogContent className="max-w-4xl">
-            <DialogHeader>
-              <DialogTitle>
+          <DialogContent className="max-w-5xl w-full h-[90vh] overflow-auto">
+            <DialogHeader className="sticky top-0 bg-background z-10">
+              <DialogTitle className="text-2xl font-bold">
                 {selectedStudent.name} - Grade {selectedStudent.grade}
               </DialogTitle>
             </DialogHeader>
 
             {/* Attendance Overview */}
-            <Card>
+            <Card className="mb-4">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <CalendarIcon className="h-5 w-5" />
@@ -398,7 +368,6 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* Attendance Table */}
                 <div className="max-h-48 overflow-y-auto">
                   <Table>
                     <TableHeader>
@@ -425,7 +394,7 @@ export default function Dashboard() {
             </Card>
 
             {/* Chapter Progress */}
-            <Card>
+            <Card className="mb-4">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <BookOpen className="h-5 w-5" />
@@ -483,9 +452,7 @@ export default function Dashboard() {
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Total Marks</p>
-                    <p className="text-2xl font-bold">
-                      {totalMarksObtained}/{totalMaxMarks}
-                    </p>
+                    <p className="text-2xl font-bold">{totalMarksObtained}/{totalMaxMarks}</p>
                   </div>
                 </div>
                 <div className="max-h-48 overflow-y-auto space-y-2">
