@@ -39,15 +39,16 @@ export default function Dashboard() {
   const { data: todayAttendance } = useQuery({
     queryKey: ["today-attendance", today, centerId],
     queryFn: async () => {
-      let query = supabase
-        .from("attendance")
-        .select("status")
-        .eq("date", today);
-
-      if (role !== "admin") {
-        query = query.eq("center_id", centerId);
+      if (!centerId) return [];
+      let query;
+      if (role !== 'admin') {
+        query = supabase.rpc('get_today_attendance_by_center', {
+          center_uuid: centerId,
+          attendance_date: today
+        });
+      } else {
+        query = supabase.from('attendance').select('status').eq('date', today);
       }
-
       const { data, error } = await query;
       if (error) throw error;
       return data || [];
