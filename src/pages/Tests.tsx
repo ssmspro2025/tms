@@ -267,6 +267,11 @@ export default function Tests() {
   const selectedTestData = tests.find((t) => t.id === selectedTest);
   const testsWithFiles = tests.filter((t) => t.uploaded_file_url);
 
+  // === NEW: filteredStudents uses exact match against selected test's grade (A: exact match)
+  const filteredStudents = selectedTestData?.grade
+    ? students.filter((s: any) => s.grade === selectedTestData.grade)
+    : students;
+
   return (
     <div className="space-y-6">
       {testsWithFiles.length > 0 && (
@@ -470,7 +475,8 @@ export default function Tests() {
                     <SelectValue placeholder="Choose student" />
                   </SelectTrigger>
                   <SelectContent>
-                    {students.map((student) => (
+                    {/* UPDATED: use filteredStudents (exact grade match) */}
+                    {filteredStudents.map((student) => (
                       <SelectItem key={student.id} value={student.id}>
                         {student.name} - Grade {student.grade}
                       </SelectItem>
@@ -609,7 +615,8 @@ export default function Tests() {
         <BulkMarksEntry
           open={showBulkEntry}
           onOpenChange={setShowBulkEntry}
-          students={students}
+          // UPDATED: pass filteredStudents so bulk entry only shows students with exact grade match
+          students={filteredStudents}
           testId={selectedTest}
           totalMarks={selectedTestData.total_marks}
           onSave={(marks) => bulkMarksMutation.mutate(marks)}
