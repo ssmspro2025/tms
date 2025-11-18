@@ -26,43 +26,42 @@ interface AttendanceRecord {
 export default function ViewRecords() {
   const { user } = useAuth();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [gradeFilter, setGradeFilter] = useState<string>("all");
+  const [gradeFilter, setGradeFilter] = useState<string>("all"); // Added grade filter
   const dateStr = format(selectedDate, "yyyy-MM-dd");
 
   // Fetch students for this center
   const { data: students = [] } = useQuery({
-    queryKey: ["students", user?.center_id],
+    queryKey: ['students', user?.center_id],
     queryFn: async () => {
       let query = supabase
-        .from("students")
-        .select("id, name, grade")
-        .order("name");
-
-      if (user?.role !== "admin" && user?.center_id) {
-        query = query.eq("center_id", user.center_id);
+        .from('students')
+        .select('id, name, grade')
+        .order('name');
+      
+      // Filter by center_id if user is not admin
+      if (user?.role !== 'admin' && user?.center_id) {
+        query = query.eq('center_id', user.center_id);
       }
-
+      
       const { data, error } = await query;
       if (error) throw error;
       return data;
     },
   });
 
-  const filteredStudents = students.filter(
-    (s) => gradeFilter === "all" || s.grade === gradeFilter
-  );
+  // Filter students by grade
+  const filteredStudents = students.filter(s => gradeFilter === "all" || s.grade === gradeFilter);
 
-  // FETCH ATTENDANCE (your join + all columns untouched)
+  // Fetch attendance records for the selected date and filtered students
   const { data: records, isLoading } = useQuery({
     queryKey: ["attendance-records", dateStr, gradeFilter, user?.center_id],
     queryFn: async () => {
-      const studentIds = filteredStudents.map((s) => s.id);
+      const studentIds = filteredStudents.map(s => s.id);
       if (studentIds.length === 0) return [];
 
       const { data, error } = await supabase
         .from("attendance")
-        .select(
-          `
+        .select(`
           id,
           student_id,
           status,
@@ -70,23 +69,19 @@ export default function ViewRecords() {
             name,
             grade
           )
-        `
-        )
+        `)
         .in("student_id", studentIds)
         .eq("date", dateStr)
         .order("students(name)");
-
       if (error) throw error;
       return data as AttendanceRecord[];
     },
     enabled: filteredStudents.length > 0,
   });
 
-  // ✅ FIXED: your DB stores lowercase "present" / "absent"
-  const presentCount = records?.filter((r) => r.status === "present").length || 0;
-  const absentCount = records?.filter((r) => r.status === "absent").length || 0;
+  const presentCount = records?.filter((r) => r.status === "Present").length || 0;
+  const absentCount = records?.filter((r) => r.status === "Absent").length || 0;
 
-  // Export CSV unchanged
   const exportToCSV = () => {
     if (!records || records.length === 0) return;
 
@@ -97,7 +92,10 @@ export default function ViewRecords() {
       record.status,
     ]);
 
-    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) => row.join(",")),
+    ].join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
@@ -119,7 +117,7 @@ export default function ViewRecords() {
         <p className="text-muted-foreground">View past attendance records</p>
       </div>
 
-      {/* GRADE FILTER */}
+      {/* Grade Filter */}
       <Card>
         <CardHeader>
           <CardTitle>Filter by Grade</CardTitle>
@@ -132,7 +130,7 @@ export default function ViewRecords() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Grades</SelectItem>
-              {Array.from(new Set(students.map((s) => s.grade))).map((g) => (
+              {Array.from(new Set(students.map(s => s.grade))).map((g) => (
                 <SelectItem key={g} value={g}>
                   {g}
                 </SelectItem>
@@ -142,7 +140,7 @@ export default function ViewRecords() {
         </CardContent>
       </Card>
 
-      {/* DATE PICKER */}
+      {/* Date Picker */}
       <Card>
         <CardHeader>
           <CardTitle>Select Date</CardTitle>
@@ -175,7 +173,7 @@ export default function ViewRecords() {
         </CardContent>
       </Card>
 
-      {/* ATTENDANCE TABLE */}
+      {/* Attendance Table */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -185,7 +183,6 @@ export default function ViewRecords() {
                 {presentCount} Present • {absentCount} Absent
               </CardDescription>
             </div>
-
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={exportToCSV}>
                 <Download className="mr-2 h-4 w-4" />
@@ -198,7 +195,6 @@ export default function ViewRecords() {
             </div>
           </div>
         </CardHeader>
-
         <CardContent>
           {isLoading ? (
             <p>Loading records...</p>
@@ -212,7 +208,6 @@ export default function ViewRecords() {
                     <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
-
                 <TableBody>
                   {records.map((record) => (
                     <TableRow key={record.id}>
@@ -220,14 +215,14 @@ export default function ViewRecords() {
                       <TableCell>{record.students.grade}</TableCell>
                       <TableCell>
                         <Badge
-                          variant={record.status === "present" ? "default" : "destructive"}
+                          variant={record.status === "Present" ? "default" : "destructive"}
                           className={
-                            record.status === "present"
+                            record.status === "Present"
                               ? "bg-secondary hover:bg-secondary/80"
                               : ""
                           }
                         >
-                          {record.status === "present" ? "Present" : "Absent"}
+                          {record.status}
                         </Badge>
                       </TableCell>
                     </TableRow>
