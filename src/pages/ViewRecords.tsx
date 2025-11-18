@@ -8,6 +8,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
 import { CalendarIcon, Download, Printer } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -25,6 +26,7 @@ interface AttendanceRecord {
 export default function ViewRecords() {
   const { user } = useAuth();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [gradeFilter, setGradeFilter] = useState<string>("all"); // Added grade filter
   const dateStr = format(selectedDate, "yyyy-MM-dd");
 
   // Fetch students for this center
@@ -33,7 +35,7 @@ export default function ViewRecords() {
     queryFn: async () => {
       let query = supabase
         .from('students')
-        .select('id')
+        .select('id, name, grade')
         .order('name');
       
       // Filter by center_id if user is not admin
@@ -47,11 +49,14 @@ export default function ViewRecords() {
     },
   });
 
+  // Filter students by grade
+  const filteredStudents = students.filter(s => gradeFilter === "all" || s.grade === gradeFilter);
+
+  // Fetch attendance records for the selected date and filtered students
   const { data: records, isLoading } = useQuery({
-    queryKey: ["attendance-records", dateStr, user?.center_id],
+    queryKey: ["attendance-records", dateStr, gradeFilter, user?.center_id],
     queryFn: async () => {
-      // Get student IDs for this center first
-      const studentIds = students.map(s => s.id);
+      const studentIds = filteredStudents.map(s => s.id);
       if (studentIds.length === 0) return [];
 
       const { data, error } = await supabase
@@ -71,8 +76,11 @@ export default function ViewRecords() {
       if (error) throw error;
       return data as AttendanceRecord[];
     },
-    enabled: students.length > 0,
+    enabled: filteredStudents.length > 0,
   });
+
+  const presentCount = records?.filter((r) => r.status === "Present").length || 0;
+  const absentCount = records?.filter((r) => r.status === "Absent").length || 0;
 
   const exportToCSV = () => {
     if (!records || records.length === 0) return;
@@ -102,9 +110,6 @@ export default function ViewRecords() {
     window.print();
   };
 
-  const presentCount = records?.filter((r) => r.status === "Present").length || 0;
-  const absentCount = records?.filter((r) => r.status === "Absent").length || 0;
-
   return (
     <div className="space-y-6">
       <div>
@@ -112,6 +117,30 @@ export default function ViewRecords() {
         <p className="text-muted-foreground">View past attendance records</p>
       </div>
 
+      {/* Grade Filter */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Filter by Grade</CardTitle>
+          <CardDescription>Select a grade to filter students</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Select value={gradeFilter} onValueChange={setGradeFilter}>
+            <SelectTrigger className="w-full md:w-[200px]">
+              <SelectValue placeholder="All Grades" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Grades</SelectItem>
+              {Array.from(new Set(students.map(s => s.grade))).map((g) => (
+                <SelectItem key={g} value={g}>
+                  {g}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
+
+      {/* Date Picker */}
       <Card>
         <CardHeader>
           <CardTitle>Select Date</CardTitle>
@@ -144,6 +173,7 @@ export default function ViewRecords() {
         </CardContent>
       </Card>
 
+      {/* Attendance Table */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
