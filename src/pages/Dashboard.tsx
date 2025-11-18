@@ -8,39 +8,38 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Users, CheckCircle2, XCircle, TrendingUp, CalendarIcon, BookOpen, FileText } from "lucide-react";
+import { Download, Users, CheckCircle2, XCircle, TrendingUp } from "lucide-react";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-
-interface Student {
-  id: string;
-  name: string;
-  grade: string;
-  total?: number;
-  present?: number;
-  absent?: number;
-  percentage?: number;
-  status?: string;
-}
 
 export default function Dashboard() {
   const { user, loading } = useAuth();
   const today = new Date().toISOString().split("T")[0];
-
-  const [gradeFilterAbsentToday, setGradeFilterAbsentToday] = useState<string>("all");
-  const [gradeFilterHighestAbsent, setGradeFilterHighestAbsent] = useState<string>("all");
-  const [selectedStudentForModal, setSelectedStudentForModal] = useState<Student | null>(null);
-
   const centerId = user?.center_id;
   const role = user?.role;
 
-  // ---------------------------
-  // 1️⃣ TOTAL STUDENTS COUNT
-  // ---------------------------
-  const { data: students } = useQuery({
+  const [gradeFilter, setGradeFilter] = useState<string>("all");
+  const [selectedStudent, setSelectedStudent] = useState<any>(null);
+
+  // Fetch students
+  const { data: students = [] } = useQuery({
     queryKey: ["students", centerId],
     queryFn: async () => {
       let query = supabase.from("students").select("*").order("name");
@@ -52,92 +51,116 @@ export default function Dashboard() {
     enabled: !!user && !loading,
   });
 
-  const grades = [...new Set(students?.map((s) => s.grade))];
+  // Filtered students by grade
+  const filteredStudents = students.filter(
+    (s) => gradeFilter === "all" || s.grade === gradeFilter
+  );
 
-  // ---------------------------
-  // 2️⃣ TODAY'S ATTENDANCE
-  // ---------------------------
-  const { data: attendance } = useQuery({
-    queryKey: ["attendance-today", today, centerId],
+  // Fetch attendance
+  const { data: allAttendance = [] } = useQuery({
+    queryKey: ["attendance", centerId],
     queryFn: async () => {
-      let query = supabase.from("attendance").select("*").eq("date", today);
-      if (role !== "admin" && centerId) query = query.eq("center_id", centerId);
-      const { data, error } = await query;
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!students,
-  });
-
-  const studentsWithStatus = students?.map((s) => {
-    const todayAttendance = attendance?.find((a) => a.student_id === s.id);
-    return {
-      ...s,
-      status: todayAttendance?.status || "Absent",
-    };
-  }) || [];
-
-  const absentStudentsToday = studentsWithStatus
-    .filter((s) => gradeFilterAbsentToday === "all" || s.grade === gradeFilterAbsentToday)
-    .filter((s) => s.status === "Absent");
-
-  const presentStudentsToday = studentsWithStatus.filter((s) => s.status === "Present");
-
-  // ---------------------------
-  // 3️⃣ HIGHEST ABSENT RATE
-  // ---------------------------
-  const { data: allAttendance } = useQuery({
-    queryKey: ["all-attendance", centerId],
-    queryFn: async () => {
-      const studentIds = students?.map((s) => s.id) || [];
+      const studentIds = students.map((s) => s.id);
       if (!studentIds.length) return [];
-      const { data, error } = await supabase.from("attendance").select("*").in("student_id", studentIds);
+      const { data, error } = await supabase
+        .from("attendance")
+        .select("*")
+        .in("student_id", studentIds);
       if (error) throw error;
       return data || [];
     },
-    enabled: !!students,
+    enabled: students.length > 0,
   });
 
-  const highestAbsentStudents = students
-    ?.map((s) => {
-      const studentAttendance = allAttendance?.filter((a) => a.student_id === s.id) || [];
-      const present = studentAttendance.filter((a) => a.status === "Present").length;
-      const absent = studentAttendance.filter((a) => a.status === "Absent").length;
-      const total = present + absent;
-      const percentage = total > 0 ? Math.round((absent / total) * 100) : 0;
-      return { ...s, total, present, absent, percentage };
-    })
-    .filter((s) => gradeFilterHighestAbsent === "all" || s.grade === gradeFilterHighestAbsent)
-    .sort((a, b) => (b.percentage || 0) - (a.percentage || 0));
+  // Compute statistics
+  const presentToday = students.filter((student) =>
+    allAttendance.some(
+      (att) =>
+        att.student_id === student.id &&
+        att.date === today &&
+        att.status === "Present"
+    )
+  );
 
-  // ---------------------------
-  // 4️⃣ CARDS DATA
-  // ---------------------------
-  const totalStudents = students?.length || 0;
-  const presentCount = presentStudentsToday.length;
-  const absentCount = absentStudentsToday.length;
-  const absentRate = totalStudents ? Math.round((absentCount / totalStudents) * 100) : 0;
+  const absentToday = students.filter((student) =>
+    allAttendance.some(
+      (att) =>
+        att.student_id === student.id &&
+        att.date === today &&
+        att.status === "Absent"
+    )
+  );
 
-  const stats = [
-    { title: "Total Students", value: totalStudents, icon: Users, color: "text-primary", bgColor: "bg-primary/10" },
-    { title: "Present Today", value: presentCount, icon: CheckCircle2, color: "text-secondary", bgColor: "bg-secondary/10" },
-    { title: "Absent Today", value: absentCount, icon: XCircle, color: "text-destructive", bgColor: "bg-destructive/10" },
-    { title: "Absent Rate", value: `${absentRate}%`, icon: TrendingUp, color: "text-accent", bgColor: "bg-accent/10" },
-  ];
+  const totalStudents = students.length;
+  const presentCount = presentToday.length;
+  const absentCount = absentToday.length;
+  const absentRate = totalStudents
+    ? Math.round((absentCount / totalStudents) * 100)
+    : 0;
 
-  if (loading) return <p>Loading dashboard...</p>;
+  // Prepare data for Highest Absentee Table
+  const studentAttendanceSummary = students.map((student) => {
+    const studentAttendance = allAttendance.filter(
+      (a) => a.student_id === student.id
+    );
+    const present = studentAttendance.filter((a) => a.status === "Present")
+      .length;
+    const absent = studentAttendance.filter((a) => a.status === "Absent")
+      .length;
+    const total = present + absent;
+    const percentage = total > 0 ? Math.round((absent / total) * 100) : 0;
+    return { ...student, present, absent, total, percentage };
+  });
+
+  const highestAbsentees = [...studentAttendanceSummary]
+    .sort((a, b) => b.percentage - a.percentage)
+    .filter((s) => gradeFilter === "all" || s.grade === gradeFilter);
+
+  // Grades for filter
+  const grades = [...new Set(students.map((s) => s.grade))];
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
         <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
-        <p className="text-muted-foreground">Here's today's attendance overview.</p>
+        <p className="text-muted-foreground">
+          Welcome back! Here's today's attendance overview.
+        </p>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => {
+      <div className="grid gap-4 md:grid-cols-4">
+        {[
+          {
+            title: "Total Students",
+            value: totalStudents,
+            icon: Users,
+            color: "text-primary",
+            bgColor: "bg-primary/10",
+          },
+          {
+            title: "Present Today",
+            value: presentCount,
+            icon: CheckCircle2,
+            color: "text-secondary",
+            bgColor: "bg-secondary/10",
+          },
+          {
+            title: "Absent Today",
+            value: absentCount,
+            icon: XCircle,
+            color: "text-destructive",
+            bgColor: "bg-destructive/10",
+          },
+          {
+            title: "Absent Rate",
+            value: `${absentRate}%`,
+            icon: TrendingUp,
+            color: "text-accent",
+            bgColor: "bg-accent/10",
+          },
+        ].map((stat) => {
           const Icon = stat.icon;
           return (
             <Card key={stat.title} className="transition-all hover:shadow-md">
@@ -155,37 +178,56 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* Tables side by side */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Absent Today */}
-        <Card>
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle>Absent Students Today</CardTitle>
-            <Select value={gradeFilterAbsentToday} onValueChange={setGradeFilterAbsentToday}>
-              <SelectTrigger className="w-32">
-                <SelectValue placeholder="Select Grade" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Grades</SelectItem>
-                {grades.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
-              </SelectContent>
-            </Select>
+      {/* Grade Filter */}
+      <div className="flex gap-4 items-center">
+        <Select value={gradeFilter} onValueChange={setGradeFilter}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="All Grades" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Grades</SelectItem>
+            {grades.map((grade) => (
+              <SelectItem key={grade} value={grade}>
+                {grade}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Tables */}
+      <div className="flex gap-6 overflow-x-auto">
+        {/* Absent Today Table */}
+        <Card className="flex-1">
+          <CardHeader>
+            <CardTitle>Absent Today</CardTitle>
           </CardHeader>
-          <CardContent className="overflow-y-auto max-h-[400px]">
-            <Table className="w-full">
+          <CardContent className="max-h-[400px] overflow-y-auto">
+            <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Grade</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead className="text-center">Absent Today</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {absentStudentsToday.map((s) => (
-                  <TableRow key={s.id} className="cursor-pointer" onClick={() => setSelectedStudentForModal(s)}>
-                    <TableCell>{s.name}</TableCell>
-                    <TableCell>{s.grade}</TableCell>
-                    <TableCell>{s.status}</TableCell>
+                {absentToday.map((student) => (
+                  <TableRow
+                    key={student.id}
+                    className="cursor-pointer hover:bg-muted"
+                    onClick={() => setSelectedStudent(student)}
+                  >
+                    <TableCell>{student.name}</TableCell>
+                    <TableCell>{student.grade}</TableCell>
+                    <TableCell className="text-center">
+                      {allAttendance.filter(
+                        (a) =>
+                          a.student_id === student.id &&
+                          a.date === today &&
+                          a.status === "Absent"
+                      ).length}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -193,39 +235,30 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Highest Absentee */}
-        <Card>
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle>Highest Absentee Students</CardTitle>
-            <Select value={gradeFilterHighestAbsent} onValueChange={setGradeFilterHighestAbsent}>
-              <SelectTrigger className="w-32">
-                <SelectValue placeholder="Select Grade" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Grades</SelectItem>
-                {grades.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
-              </SelectContent>
-            </Select>
+        {/* Highest Absentee Table */}
+        <Card className="flex-1">
+          <CardHeader>
+            <CardTitle>Highest Absentee</CardTitle>
           </CardHeader>
-          <CardContent className="overflow-y-auto max-h-[400px]">
-            <Table className="w-full">
+          <CardContent className="max-h-[400px] overflow-y-auto">
+            <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Grade</TableHead>
-                  <TableHead>Total Days</TableHead>
-                  <TableHead>Absent Days</TableHead>
-                  <TableHead>Absent %</TableHead>
+                  <TableHead className="text-center">Absent %</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {highestAbsentStudents.map((s) => (
-                  <TableRow key={s.id} className="cursor-pointer" onClick={() => setSelectedStudentForModal(s)}>
-                    <TableCell>{s.name}</TableCell>
-                    <TableCell>{s.grade}</TableCell>
-                    <TableCell>{s.total}</TableCell>
-                    <TableCell>{s.absent}</TableCell>
-                    <TableCell>{s.percentage}%</TableCell>
+                {highestAbsentees.map((student) => (
+                  <TableRow
+                    key={student.id}
+                    className="cursor-pointer hover:bg-muted"
+                    onClick={() => setSelectedStudent(student)}
+                  >
+                    <TableCell>{student.name}</TableCell>
+                    <TableCell>{student.grade}</TableCell>
+                    <TableCell className="text-center">{student.percentage}%</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -234,53 +267,34 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Student Details Modal */}
-      <Dialog open={!!selectedStudentForModal} onOpenChange={() => setSelectedStudentForModal(null)}>
-        <DialogContent className="max-w-3xl">
-          {selectedStudentForModal && (
-            <>
-              <DialogHeader>
-                <DialogTitle>{selectedStudentForModal.name} - Grade {selectedStudentForModal.grade}</DialogTitle>
-              </DialogHeader>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Total Days</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p>{selectedStudentForModal.total || 0}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Present</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p>{selectedStudentForModal.present || 0}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Absent</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p>{selectedStudentForModal.absent || 0}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Absent %</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p>{selectedStudentForModal.percentage || 0}%</p>
-                  </CardContent>
-                </Card>
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* Student Modal */}
+      {selectedStudent && (
+        <Dialog open={!!selectedStudent} onOpenChange={() => setSelectedStudent(null)}>
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>{selectedStudent.name} - Grade {selectedStudent.grade}</DialogTitle>
+            </DialogHeader>
+            <div className="grid grid-cols-2 gap-4">
+              <Card className="p-2">
+                <CardTitle className="text-sm">Total Days</CardTitle>
+                <CardContent>{studentAttendanceSummary.find(s => s.id === selectedStudent.id)?.total || 0}</CardContent>
+              </Card>
+              <Card className="p-2">
+                <CardTitle className="text-sm">Present</CardTitle>
+                <CardContent>{studentAttendanceSummary.find(s => s.id === selectedStudent.id)?.present || 0}</CardContent>
+              </Card>
+              <Card className="p-2">
+                <CardTitle className="text-sm">Absent</CardTitle>
+                <CardContent>{studentAttendanceSummary.find(s => s.id === selectedStudent.id)?.absent || 0}</CardContent>
+              </Card>
+              <Card className="p-2">
+                <CardTitle className="text-sm">Absent %</CardTitle>
+                <CardContent>{studentAttendanceSummary.find(s => s.id === selectedStudent.id)?.percentage || 0}%</CardContent>
+              </Card>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
