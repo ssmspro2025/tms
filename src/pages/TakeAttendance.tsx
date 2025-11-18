@@ -11,7 +11,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval } from "date-fns";
-import { CalendarIcon } from "lucide-react";
+import { CalendarIcon, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Student {
@@ -37,10 +37,10 @@ export default function TakeAttendance() {
   const { user } = useAuth();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [attendance, setAttendance] = useState<Record<string, AttendanceRecord>>({});
-  const [holidayFor, setHolidayFor] = useState<"" | "all" | string>("");
   const [gradeFilter, setGradeFilter] = useState<string>("all");
-  const [holidayMap, setHolidayMap] = useState<Record<string, "" | "all" | string>>({});
   const [attendanceDates, setAttendanceDates] = useState<string[]>([]);
+  const [showMiniCalendar, setShowMiniCalendar] = useState(false);
+  const [miniCalendarMonth, setMiniCalendarMonth] = useState<Date>(new Date());
   const [miniCalendar, setMiniCalendar] = useState<Record<string, MiniDayNote>>({});
 
   const dateStr = format(selectedDate, "yyyy-MM-dd");
@@ -61,7 +61,10 @@ export default function TakeAttendance() {
   const { data: existingAttendance } = useQuery({
     queryKey: ["attendance", dateStr],
     queryFn: async () => {
-      const { data, error } = await supabase.from("attendance").select("student_id, status, time_in, time_out, date").eq("date", dateStr);
+      const { data, error } = await supabase
+        .from("attendance")
+        .select("student_id, status, time_in, time_out, date")
+        .eq("date", dateStr);
       if (error) throw error;
       return data;
     },
@@ -99,28 +102,8 @@ export default function TakeAttendance() {
         };
       });
       setAttendance(newAttendance);
-      setHolidayFor(holidayMap[dateStr] || "");
     }
-  }, [students, existingAttendance, dateStr, holidayMap]);
-
-  // Apply holiday automatically whenever holidayFor changes
-  useEffect(() => {
-    if (!students || !holidayFor) return;
-    const newAttendance = { ...attendance };
-    students.forEach((student) => {
-      if (holidayFor === "all" || student.grade === holidayFor) {
-        newAttendance[student.id] = {
-          ...newAttendance[student.id],
-          present: false,
-          timeIn: "",
-          timeOut: "",
-          studentId: student.id,
-        };
-      }
-    });
-    setAttendance(newAttendance);
-    setHolidayMap(prev => ({ ...prev, [dateStr]: holidayFor }));
-  }, [holidayFor, students, dateStr]);
+  }, [students, existingAttendance]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -158,9 +141,7 @@ export default function TakeAttendance() {
     if (!students) return;
     const newAttendance: Record<string, AttendanceRecord> = {};
     students.forEach(student => {
-      if (!(holidayFor === "all" || student.grade === holidayFor)) {
-        newAttendance[student.id] = { ...attendance[student.id], present: true };
-      }
+      newAttendance[student.id] = { ...attendance[student.id], present: true };
     });
     setAttendance(newAttendance);
   };
@@ -169,9 +150,7 @@ export default function TakeAttendance() {
     if (!students) return;
     const newAttendance: Record<string, AttendanceRecord> = {};
     students.forEach(student => {
-      if (!(holidayFor === "all" || student.grade === holidayFor)) {
-        newAttendance[student.id] = { ...attendance[student.id], present: false, timeIn: "", timeOut: "" };
-      }
+      newAttendance[student.id] = { ...attendance[student.id], present: false, timeIn: "", timeOut: "" };
     });
     setAttendance(newAttendance);
   };
@@ -181,15 +160,13 @@ export default function TakeAttendance() {
     saveMutation.mutate();
   };
 
-  const isStudentDisabled = (student: Student) => holidayFor === "all" || student.grade === holidayFor;
-
   const filteredStudents =
     gradeFilter === "all"
       ? students
       : students?.filter((s) => s.grade === gradeFilter);
 
   // Mini Calendar for the month
-  const daysInMonth = eachDayOfInterval({ start: startOfMonth(selectedDate), end: endOfMonth(selectedDate) });
+  const daysInMonth = eachDayOfInterval({ start: startOfMonth(miniCalendarMonth), end: endOfMonth(miniCalendarMonth) });
 
   const toggleMiniHoliday = (date: string) => {
     setMiniCalendar(prev => ({
@@ -215,65 +192,10 @@ export default function TakeAttendance() {
       {/* Filters Row */}
       <Card>
         <CardHeader>
-          <CardTitle>Attendance Filters</CardTitle>
+          <CardTitle>Filters</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-4 items-end">
-          {/* Past Attendance */}
-          <div className="flex-1 min-w-[150px]">
-            <Label className="text-xs">Select Past Attendance</Label>
-            <select
-              className="border p-2 rounded w-full"
-              value={dateStr}
-              onChange={(e) => setSelectedDate(new Date(e.target.value))}
-            >
-              {attendanceDates.map((d: string) => (
-                <option key={d} value={d}>
-                  {format(new Date(d), "PPP")}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Grade Filter */}
-          <div className="flex-1 min-w-[120px]">
-            <Label className="text-xs">Filter by Grade</Label>
-            <select
-              className="border p-2 rounded w-full"
-              value={gradeFilter}
-              onChange={(e) => setGradeFilter(e.target.value)}
-            >
-              <option value="all">All Grades</option>
-              {students && Array.from(new Set(students.map(s => s.grade))).map(g => (
-                <option key={g} value={g}>{g}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Holiday Selector */}
-          <div className="flex-1 min-w-[120px]">
-            <Label className="text-xs">Mark Holiday</Label>
-            <select
-              className="border p-2 rounded w-full"
-              value={holidayFor}
-              onChange={(e) => setHolidayFor(e.target.value as "" | "all" | string)}
-            >
-              <option value="">None</option>
-              <option value="all">All Grades</option>
-              {students && Array.from(new Set(students.map(s => s.grade))).map(g => (
-                <option key={g} value={g}>{g}</option>
-              ))}
-            </select>
-          </div>
-
-          {holidayFor && (
-            <div className="min-w-[150px]">
-              <span className="text-sm text-red-500 block mt-5">
-                {holidayFor === "all" ? "All students marked holiday" : `Grade ${holidayFor} marked holiday`}
-              </span>
-            </div>
-          )}
-
-          {/* Date Picker */}
+          {/* Select Date */}
           <div className="flex-1 min-w-[180px]">
             <Label className="text-xs">Select Date</Label>
             <Popover>
@@ -300,43 +222,95 @@ export default function TakeAttendance() {
               </PopoverContent>
             </Popover>
           </div>
+
+          {/* Grade Filter */}
+          <div className="flex-1 min-w-[120px]">
+            <Label className="text-xs">Filter by Grade</Label>
+            <select
+              className="border p-2 rounded w-full"
+              value={gradeFilter}
+              onChange={(e) => setGradeFilter(e.target.value)}
+            >
+              <option value="all">All Grades</option>
+              {students && Array.from(new Set(students.map(s => s.grade))).map(g => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Past Attendance */}
+          <div className="flex-1 min-w-[180px]">
+            <Label className="text-xs">Select Past Attendance</Label>
+            <select
+              className="border p-2 rounded w-full"
+              value={dateStr}
+              onChange={(e) => setSelectedDate(new Date(e.target.value))}
+            >
+              {attendanceDates.map((d: string) => (
+                <option key={d} value={d}>
+                  {format(new Date(d), "PPP")}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Toggle Mini Calendar */}
+          <div className="flex-1 min-w-[150px] mt-4">
+            <Button variant="outline" onClick={() => setShowMiniCalendar(prev => !prev)}>
+              {showMiniCalendar ? "Hide Mini Calendar" : "Show Mini Calendar"} <ChevronDown className="ml-1 h-4 w-4"/>
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
       {/* Mini Calendar */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Mini Month Calendar</CardTitle>
-          <CardDescription>Mark holidays and add notes (stored locally)</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-7 gap-2">
-            {daysInMonth.map((day) => {
-              const dayStr = format(day, "yyyy-MM-dd");
-              const dayData = miniCalendar[dayStr] || { holiday: false, note: "" };
-              return (
-                <div key={dayStr} className="flex flex-col items-center border rounded p-1">
-                  <button
-                    className={`w-full rounded text-sm mb-1 ${
-                      dayData.holiday ? "bg-red-500 text-white" : "bg-gray-100"
-                    }`}
-                    onClick={() => toggleMiniHoliday(dayStr)}
-                  >
-                    {format(day, "d")}
-                  </button>
-                  <Input
-                    type="text"
-                    value={dayData.note}
-                    onChange={(e) => updateMiniNote(dayStr, e.target.value)}
-                    placeholder="Note"
-                    className="text-xs p-1 w-full"
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+      {showMiniCalendar && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Mini Month Calendar</CardTitle>
+            <CardDescription>Mark holidays and add notes (local only)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-2 mb-2 items-center">
+              <Label className="text-xs">Select Month:</Label>
+              <input
+                type="month"
+                value={format(miniCalendarMonth, "yyyy-MM")}
+                onChange={(e) => {
+                  const [year, month] = e.target.value.split("-");
+                  setMiniCalendarMonth(new Date(parseInt(year), parseInt(month) - 1));
+                }}
+                className="border p-1 rounded"
+              />
+            </div>
+            <div className="grid grid-cols-7 gap-2">
+              {daysInMonth.map((day) => {
+                const dayStr = format(day, "yyyy-MM-dd");
+                const dayData = miniCalendar[dayStr] || { holiday: false, note: "" };
+                return (
+                  <div key={dayStr} className="flex flex-col items-center border rounded p-1">
+                    <button
+                      className={`w-full rounded text-sm mb-1 ${
+                        dayData.holiday ? "bg-red-500 text-white" : "bg-gray-100"
+                      }`}
+                      onClick={() => toggleMiniHoliday(dayStr)}
+                    >
+                      {format(day, "d")}
+                    </button>
+                    <Input
+                      type="text"
+                      value={dayData.note}
+                      onChange={(e) => updateMiniNote(dayStr, e.target.value)}
+                      placeholder="Note"
+                      className="text-xs p-1 w-full"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Attendance Form */}
       <Card>
@@ -363,7 +337,6 @@ export default function TakeAttendance() {
                         id={student.id}
                         checked={attendance[student.id]?.present || false}
                         onCheckedChange={() => handleToggle(student.id)}
-                        disabled={isStudentDisabled(student)}
                       />
                       <Label htmlFor={student.id} className="cursor-pointer font-medium">
                         {student.name}
@@ -379,7 +352,6 @@ export default function TakeAttendance() {
                         type="time"
                         value={attendance[student.id]?.timeIn || ""}
                         onChange={e => handleTimeChange(student.id, "timeIn", e.target.value)}
-                        disabled={isStudentDisabled(student)}
                         className="mt-1"
                       />
                     </div>
@@ -390,12 +362,10 @@ export default function TakeAttendance() {
                         type="time"
                         value={attendance[student.id]?.timeOut || ""}
                         onChange={e => handleTimeChange(student.id, "timeOut", e.target.value)}
-                        disabled={isStudentDisabled(student)}
                         className="mt-1"
                       />
                     </div>
                   </div>
-                  {isStudentDisabled(student) && <span className="text-sm text-blue-600 ml-7 mt-1 block">Holiday</span>}
                 </div>
               ))}
               <Button type="submit" className="w-full">Save Attendance</Button>
