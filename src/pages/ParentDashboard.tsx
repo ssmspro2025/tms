@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -5,57 +6,35 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { User, Calendar, BookOpen, FileText, LogOut } from 'lucide-react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from '@/components/ui/table';
-import { useState } from 'react';
-import {
-  format,
-  startOfMonth,
-  endOfMonth,
-  startOfWeek,
-  endOfWeek,
-  addDays,
-} from 'date-fns';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Tooltip } from '@/components/ui/tooltip';
-
-const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { format } from 'date-fns';
 
 const ParentDashboard = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
+  // Redirect if not parent or missing student_id
   if (!user || user.role !== 'parent' || !user.student_id) {
     navigate('/login-parent');
     return null;
   }
-
-  // State for calendar
-  const [calendarMonth, setCalendarMonth] = useState(new Date());
-
-  // Filters for test results & chapters
-  const [subjectFilter, setSubjectFilter] = useState<string>('all');
-  const [chapterFilter, setChapterFilter] = useState<string>('all');
-  const [monthFilter, setMonthFilter] = useState<string>('all');
 
   // Fetch student
   const { data: student } = useQuery({
     queryKey: ['student', user.student_id],
     queryFn: async () => {
       if (!user.student_id) return null;
-      const { data, error } = await supabase.from('students').select('*').eq('id', user.student_id).single();
+      const { data, error } = await supabase
+        .from('students')
+        .select('*')
+        .eq('id', user.student_id)
+        .single();
       if (error) throw error;
       return data;
     },
   });
 
-  // Fetch attendance
+  // Attendance
   const { data: attendance = [] } = useQuery({
     queryKey: ['attendance', user.student_id],
     queryFn: async () => {
@@ -64,13 +43,13 @@ const ParentDashboard = () => {
         .from('attendance')
         .select('*')
         .eq('student_id', user.student_id)
-        .order('date', { ascending: true });
+        .order('date', { ascending: false });
       if (error) throw error;
-      return data;
+      return data || [];
     },
   });
 
-  // Fetch tests
+  // Test results
   const { data: testResults = [] } = useQuery({
     queryKey: ['test-results', user.student_id],
     queryFn: async () => {
@@ -79,13 +58,13 @@ const ParentDashboard = () => {
         .from('test_results')
         .select('*, tests(*)')
         .eq('student_id', user.student_id)
-        .order('date_taken', { ascending: true });
+        .order('date_taken', { ascending: false });
       if (error) throw error;
-      return data;
+      return data || [];
     },
   });
 
-  // Fetch chapters
+  // Chapters
   const { data: chapters = [] } = useQuery({
     queryKey: ['chapters-studied', user.student_id],
     queryFn: async () => {
@@ -94,79 +73,60 @@ const ParentDashboard = () => {
         .from('student_chapters')
         .select('*, chapters(*)')
         .eq('student_id', user.student_id)
-        .order('date_completed', { ascending: true });
+        .order('date_completed', { ascending: false });
       if (error) throw error;
-      return data;
+      return data || [];
     },
   });
 
-  const totalDays = attendance.length;
-  const presentDays = attendance.filter((a: any) => a.status === 'Present').length;
+  // Attendance stats
+  const totalDays = (attendance || []).length;
+  const presentDays = (attendance || []).filter((a: any) => a.status === 'Present').length;
   const absentDays = totalDays - presentDays;
   const attendancePercentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login-parent');
-  };
+  // Filters
+  const [monthFilter, setMonthFilter] = useState('all');
+  const [subjectFilter, setSubjectFilter] = useState('all');
+  const [chapterFilter, setChapterFilter] = useState('all');
+  const [showMiniCalendar, setShowMiniCalendar] = useState(false);
 
-  // Prepare mini calendar data
-  const firstDayOfMonth = startOfMonth(calendarMonth);
-  const lastDayOfMonth = endOfMonth(calendarMonth);
-  const firstDayOfCalendar = startOfWeek(firstDayOfMonth, { weekStartsOn: 0 });
-  const lastDayOfCalendar = endOfWeek(lastDayOfMonth, { weekStartsOn: 0 });
+  // Get subjects and chapters safely
+  const subjects = Array.from(
+    new Set([
+      ...(chapters || []).map(c => c.chapters?.subject),
+      ...(testResults || []).map(t => t.tests?.subject),
+    ].filter(Boolean))
+  );
 
-  const calendarDays: Date[] = [];
-  let day = firstDayOfCalendar;
-  while (day <= lastDayOfCalendar) {
-    calendarDays.push(day);
-    day = addDays(day, 1);
-  }
+  const chapterNames = Array.from(
+    new Set((chapters || []).map(c => c.chapters?.chapter_name).filter(Boolean))
+  );
 
-  // Maps
-  const attendanceMap: Record<string, 'Present' | 'Absent'> = {};
-  attendance.forEach(a => (attendanceMap[a.date] = a.status));
-
-  const chaptersMap: Record<string, string[]> = {};
-  chapters.forEach(c => {
-    if (c.date_completed) {
-      const d = c.date_completed.slice(0, 10);
-      if (!chaptersMap[d]) chaptersMap[d] = [];
-      chaptersMap[d].push(c.chapters?.chapter_name);
-    }
-  });
-
-  const testsMap: Record<string, any[]> = {};
-  testResults.forEach(t => {
-    if (t.date_taken) {
-      const d = t.date_taken.slice(0, 10);
-      if (!testsMap[d]) testsMap[d] = [];
-      testsMap[d].push({ name: t.tests?.name, marks: t.marks_obtained, total: t.tests?.total_marks });
-    }
-  });
-
-  // Filtered test results & chapters
-  const filteredTests = testResults.filter(t => {
+  // Filtered tests & chapters
+  const filteredTests = (testResults || []).filter(t => {
     const subjectMatch = subjectFilter === 'all' || t.tests?.subject === subjectFilter;
     const monthMatch = monthFilter === 'all' || format(new Date(t.date_taken), 'yyyy-MM') === monthFilter;
     return subjectMatch && monthMatch;
   });
 
-  const filteredChapters = chapters.filter(c => {
+  const filteredChapters = (chapters || []).filter(c => {
     const subjectMatch = subjectFilter === 'all' || c.chapters?.subject === subjectFilter;
     const chapterMatch = chapterFilter === 'all' || c.chapters?.chapter_name === chapterFilter;
     const monthMatch = monthFilter === 'all' || format(new Date(c.date_completed), 'yyyy-MM') === monthFilter;
     return subjectMatch && chapterMatch && monthMatch;
   });
 
-  // Available subjects & chapters for dropdowns
-  const subjects = Array.from(new Set([...chapters.map(c => c.chapters?.subject), ...testResults.map(t => t.tests?.subject)]).filter(Boolean));
-  const chapterNames = Array.from(new Set(chapters.map(c => c.chapters?.chapter_name).filter(Boolean)));
+  const handleLogout = () => {
+    logout();
+    navigate('/login-parent');
+  };
 
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* HEADER */}
+
+        {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <User className="h-8 w-8 text-primary" />
@@ -181,7 +141,7 @@ const ParentDashboard = () => {
           </Button>
         </div>
 
-        {/* STUDENT INFO */}
+        {/* Student Info */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -215,65 +175,7 @@ const ParentDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* MINI STANDARD CALENDAR */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5" /> Attendance Calendar
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline">Show Calendar</Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-3">
-                <div className="flex justify-between items-center mb-2">
-                  <Button size="sm" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}>Prev</Button>
-                  <span className="font-medium">{format(calendarMonth, 'MMMM yyyy')}</span>
-                  <Button size="sm" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}>Next</Button>
-                </div>
-                <div className="grid grid-cols-7 gap-0.5 text-xs text-center mb-1">
-                  {weekdays.map(day => (
-                    <div key={day} className="font-medium">{day}</div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7 gap-0.5 text-xs text-center">
-                  {calendarDays.map(date => {
-                    const dateStr = format(date, 'yyyy-MM-dd');
-                    const status = attendanceMap[dateStr];
-                    const isCurrentMonth = date.getMonth() === calendarMonth.getMonth();
-                    return (
-                      <Tooltip
-                        key={dateStr}
-                        content={
-                          <div className="text-xs">
-                            <p><strong>{status || 'No Record'}</strong></p>
-                            <p>Chapters: {chaptersMap[dateStr]?.join(', ') || '-'}</p>
-                            <p>Tests: {testsMap[dateStr]?.map(t => `${t.name} (${t.marks}/${t.total})`).join(', ') || '-'}</p>
-                          </div>
-                        }
-                      >
-                        <div
-                          className={`p-1 text-center rounded cursor-pointer w-6 h-6 flex items-center justify-center ${
-                            !isCurrentMonth ? 'bg-gray-100 text-gray-400' :
-                            status === 'Present' ? 'bg-green-700 text-white' :
-                            status === 'Absent' ? 'bg-red-700 text-white' :
-                            'bg-gray-200 text-black'
-                          }`}
-                        >
-                          {format(date, 'd')}
-                        </div>
-                      </Tooltip>
-                    );
-                  })}
-                </div>
-              </PopoverContent>
-            </Popover>
-          </CardContent>
-        </Card>
-
-        {/* ATTENDANCE SUMMARY */}
+        {/* Attendance Summary */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -283,43 +185,86 @@ const ParentDashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
+              <div className="text-center p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
                 <p className="text-2xl font-bold text-blue-600">{totalDays}</p>
                 <p className="text-sm text-muted-foreground">Total Days</p>
               </div>
-              <div className="text-center p-4 bg-green-50 rounded-lg">
-                <p className="text-2xl font-bold text-green-700">{presentDays}</p>
+              <div className="text-center p-4 bg-green-50 dark:bg-green-950/20 rounded-lg">
+                <p className="text-2xl font-bold text-green-600">{presentDays}</p>
                 <p className="text-sm text-muted-foreground">Present</p>
               </div>
-              <div className="text-center p-4 bg-red-50 rounded-lg">
-                <p className="text-2xl font-bold text-red-700">{absentDays}</p>
+              <div className="text-center p-4 bg-red-50 dark:bg-red-950/20 rounded-lg">
+                <p className="text-2xl font-bold text-red-600">{absentDays}</p>
                 <p className="text-sm text-muted-foreground">Absent</p>
               </div>
-              <div className="text-center p-4 bg-purple-50 rounded-lg">
+              <div className="text-center p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg">
                 <p className="text-2xl font-bold text-purple-600">{attendancePercentage}%</p>
                 <p className="text-sm text-muted-foreground">Attendance</p>
               </div>
             </div>
+            <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-green-600 transition-all duration-300"
+                style={{ width: `${attendancePercentage}%` }}
+              />
+            </div>
+
+            {/* Mini Calendar Toggle */}
+            <div className="mt-4">
+              <Button size="sm" onClick={() => setShowMiniCalendar(prev => !prev)}>
+                {showMiniCalendar ? 'Hide Calendar' : 'Show Calendar'}
+              </Button>
+              {showMiniCalendar && (
+                <div className="mt-3 border rounded p-2 w-64 h-64 overflow-auto">
+                  <p className="text-sm font-semibold mb-2">Mini Attendance Calendar</p>
+                  {/* Mini calendar: simplified month view */}
+                  {attendance.map((a: any) => {
+                    const date = format(new Date(a.date), 'MMM d');
+                    return (
+                      <div
+                        key={a.date}
+                        className={`p-1 rounded mb-1 text-white text-sm ${
+                          a.status === 'Present' ? 'bg-green-700' : 'bg-red-700'
+                        }`}
+                        title={`Status: ${a.status}`}
+                      >
+                        {date}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
 
-        {/* TEST RESULTS FILTER */}
+        {/* Test Results */}
         <Card>
-          <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+          <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" /> Test Results
+              <FileText className="h-5 w-5" />
+              Test Results
             </CardTitle>
-            <div className="flex gap-2 flex-wrap">
-              <select value={subjectFilter} onChange={e => setSubjectFilter(e.target.value)} className="border rounded p-1 text-sm">
-                <option value="all">All Subjects</option>
-                {subjects.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <input type="month" value={monthFilter} onChange={e => setMonthFilter(e.target.value)} className="border rounded p-1 text-sm" />
-            </div>
           </CardHeader>
           <CardContent>
+            <div className="flex gap-2 mb-4">
+              <select
+                value={subjectFilter}
+                onChange={(e) => setSubjectFilter(e.target.value)}
+                className="border rounded p-1"
+              >
+                <option value="all">All Subjects</option>
+                {subjects.map(sub => <option key={sub} value={sub}>{sub}</option>)}
+              </select>
+              <input
+                type="month"
+                value={monthFilter === 'all' ? '' : monthFilter}
+                onChange={(e) => setMonthFilter(e.target.value || 'all')}
+                className="border rounded p-1"
+              />
+            </div>
             {filteredTests.length === 0 ? (
-              <p className="text-muted-foreground text-center py-4">No test results</p>
+              <p className="text-muted-foreground text-center py-8">No test results available</p>
             ) : (
               <Table>
                 <TableHeader>
@@ -341,9 +286,21 @@ const ParentDashboard = () => {
                         <TableCell>{result.tests?.name || '-'}</TableCell>
                         <TableCell>{result.tests?.subject || '-'}</TableCell>
                         <TableCell>{new Date(result.date_taken).toLocaleDateString()}</TableCell>
-                        <TableCell>{result.marks_obtained}/{result.tests?.total_marks || 0}</TableCell>
-                        <TableCell className={percentage >= 75 ? 'text-green-600 font-semibold' : percentage >= 50 ? 'text-yellow-600 font-semibold' : 'text-red-600 font-semibold'}>
-                          {percentage}%
+                        <TableCell>
+                          {result.marks_obtained}/{result.tests?.total_marks || 0}
+                        </TableCell>
+                        <TableCell>
+                          <span
+                            className={`font-semibold ${
+                              percentage >= 75
+                                ? 'text-green-600'
+                                : percentage >= 50
+                                ? 'text-yellow-600'
+                                : 'text-red-600'
+                            }`}
+                          >
+                            {percentage}%
+                          </span>
                         </TableCell>
                       </TableRow>
                     );
@@ -354,27 +311,41 @@ const ParentDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* CHAPTERS STUDIED FILTER */}
+        {/* Chapters Studied */}
         <Card>
-          <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+          <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <BookOpen className="h-5 w-5" /> Chapters Studied
+              <BookOpen className="h-5 w-5" />
+              Chapters Studied
             </CardTitle>
-            <div className="flex gap-2 flex-wrap">
-              <select value={subjectFilter} onChange={e => setSubjectFilter(e.target.value)} className="border rounded p-1 text-sm">
-                <option value="all">All Subjects</option>
-                {subjects.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <select value={chapterFilter} onChange={e => setChapterFilter(e.target.value)} className="border rounded p-1 text-sm">
-                <option value="all">All Chapters</option>
-                {chapterNames.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <input type="month" value={monthFilter} onChange={e => setMonthFilter(e.target.value)} className="border rounded p-1 text-sm" />
-            </div>
           </CardHeader>
           <CardContent>
+            <div className="flex gap-2 mb-4">
+              <select
+                value={subjectFilter}
+                onChange={(e) => setSubjectFilter(e.target.value)}
+                className="border rounded p-1"
+              >
+                <option value="all">All Subjects</option>
+                {subjects.map(sub => <option key={sub} value={sub}>{sub}</option>)}
+              </select>
+              <select
+                value={chapterFilter}
+                onChange={(e) => setChapterFilter(e.target.value)}
+                className="border rounded p-1"
+              >
+                <option value="all">All Chapters</option>
+                {chapterNames.map(ch => <option key={ch} value={ch}>{ch}</option>)}
+              </select>
+              <input
+                type="month"
+                value={monthFilter === 'all' ? '' : monthFilter}
+                onChange={(e) => setMonthFilter(e.target.value || 'all')}
+                className="border rounded p-1"
+              />
+            </div>
             {filteredChapters.length === 0 ? (
-              <p className="text-muted-foreground text-center py-4">No chapters recorded</p>
+              <p className="text-muted-foreground text-center py-8">No chapters recorded</p>
             ) : (
               <Table>
                 <TableHeader>
@@ -390,7 +361,11 @@ const ParentDashboard = () => {
                     <TableRow key={chapter.id}>
                       <TableCell>{chapter.chapters?.subject || '-'}</TableCell>
                       <TableCell>{chapter.chapters?.chapter_name || '-'}</TableCell>
-                      <TableCell>{chapter.date_completed ? new Date(chapter.date_completed).toLocaleDateString() : '-'}</TableCell>
+                      <TableCell>
+                        {chapter.date_completed
+                          ? new Date(chapter.date_completed).toLocaleDateString()
+                          : '-'}
+                      </TableCell>
                       <TableCell>{chapter.chapters?.notes || '-'}</TableCell>
                     </TableRow>
                   ))}
