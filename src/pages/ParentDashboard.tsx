@@ -66,7 +66,6 @@ const MiniCalendar = ({ attendance, chapters, tests, selectedMonth, setSelectedM
                 {day.getDate()}
               </div>
 
-              {/* Tooltip */}
               {(tooltipData.dayChapters.length > 0 || tooltipData.dayTests.length > 0) && (
                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-56 p-2 bg-white border rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10 text-xs">
                   {tooltipData.dayChapters.length > 0 && (
@@ -172,6 +171,7 @@ const ParentDashboardContent = () => {
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-6xl mx-auto space-y-6">
+        
         {/* HEADER */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -292,6 +292,11 @@ const ParentDashboardContent = () => {
                   <TableRow>
                     <TableHead>Date</TableHead>
                     <TableHead>Status</TableHead>
+
+                    {/* ✅ ADDED */}
+                    <TableHead>Time In</TableHead>
+                    <TableHead>Time Out</TableHead>
+
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -301,6 +306,20 @@ const ParentDashboardContent = () => {
                       <TableCell className={a.status === 'Present' ? 'text-green-600' : 'text-red-600'}>
                         {a.status}
                       </TableCell>
+
+                      {/* ✅ ADDED */}
+                      <TableCell>
+                        {a.time_in
+                          ? new Date(a.time_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                          : '-'}
+                      </TableCell>
+
+                      <TableCell>
+                        {a.time_out
+                          ? new Date(a.time_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                          : '-'}
+                      </TableCell>
+
                     </TableRow>
                   ))}
                 </TableBody>
@@ -393,6 +412,7 @@ const ParentDashboardContent = () => {
             )}
           </CardContent>
         </Card>
+
       </div>
     </div>
   );
