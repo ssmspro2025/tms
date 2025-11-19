@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -34,10 +34,7 @@ export default function ChaptersTracking() {
   const { data: students = [] } = useQuery({
     queryKey: ["students", user?.center_id],
     queryFn: async () => {
-      let query = supabase
-        .from("students")
-        .select("*")
-        .order("name");
+      let query = supabase.from("students").select("*").order("name");
       if (user?.role !== "admin" && user?.center_id) {
         query = query.eq("center_id", user.center_id);
       }
@@ -61,22 +58,17 @@ export default function ChaptersTracking() {
     },
   });
 
-  // Auto select present students whenever date or grade changes
+  // Filtered students based on grade
   const filteredStudents = students.filter(
-    (s) => (filterGrade === "all" || s.grade === filterGrade)
+    (s) => filterGrade === "all" || s.grade === filterGrade
   );
 
-  // Update selectedStudentIds to include present students
-  const autoSelectPresent = () => {
+  // Auto select present students whenever date or grade changes
+  useEffect(() => {
     const presentIds = filteredStudents
       .filter((s) => presentToday.includes(s.id))
       .map((s) => s.id);
     setSelectedStudentIds(presentIds);
-  };
-
-  // Call autoSelectPresent whenever date or grade changes
-  useState(() => {
-    autoSelectPresent();
   }, [date, filterGrade, students, presentToday]);
 
   // Fetch chapters for this center
@@ -89,11 +81,14 @@ export default function ChaptersTracking() {
         .order("date_taught", { ascending: false });
 
       if (filterSubject !== "all") query = query.eq("subject", filterSubject);
+
       const { data, error } = await query;
       if (error) throw error;
 
       let filtered = data.filter((chapter: any) =>
-        chapter.student_chapters.some((sc: any) => sc.students.center_id === user?.center_id)
+        chapter.student_chapters.some(
+          (sc: any) => sc.students.center_id === user?.center_id
+        )
       );
 
       if (filterStudent !== "all") {
@@ -116,9 +111,11 @@ export default function ChaptersTracking() {
   const { data: uniqueChapters = [] } = useQuery({
     queryKey: ["unique-chapters", user?.center_id],
     queryFn: async () => {
-      let query = supabase.from("chapters").select("id, subject, chapter_name");
-      const { data, error } = await query;
+      const { data, error } = await supabase
+        .from("chapters")
+        .select("id, subject, chapter_name");
       if (error) throw error;
+
       const seen = new Set<string>();
       const unique = [];
       for (const chapter of data) {
@@ -132,28 +129,42 @@ export default function ChaptersTracking() {
     },
   });
 
-  // Add chapter
+  // Add chapter mutation
   const addChapterMutation = useMutation({
     mutationFn: async () => {
       let chapterId: string;
+
       if (selectedChapterId) {
         const selectedChapter = uniqueChapters.find((c) => c.id === selectedChapterId);
         if (!selectedChapter) throw new Error("Chapter not found");
+
         const { data: chapterData, error } = await supabase
           .from("chapters")
-          .insert({ subject: selectedChapter.subject, chapter_name: selectedChapter.chapter_name, date_taught: date, notes: notes || null })
+          .insert({
+            subject: selectedChapter.subject,
+            chapter_name: selectedChapter.chapter_name,
+            date_taught: date,
+            notes: notes || null
+          })
           .select()
           .single();
         if (error) throw error;
         chapterId = chapterData.id;
+
       } else if (subject && chapterName) {
         const { data: chapterData, error } = await supabase
           .from("chapters")
-          .insert({ subject, chapter_name, date_taught: date, notes: notes || null })
+          .insert({
+            subject,
+            chapter_name: chapterName, // <-- fixed
+            date_taught: date,
+            notes: notes || null
+          })
           .select()
           .single();
         if (error) throw error;
         chapterId = chapterData.id;
+
       } else {
         throw new Error("Select a previous chapter or enter a new one");
       }
@@ -184,7 +195,7 @@ export default function ChaptersTracking() {
     },
   });
 
-  // Delete chapter
+  // Delete chapter mutation
   const deleteChapterMutation = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from("chapters").delete().eq("id", id);
@@ -201,7 +212,9 @@ export default function ChaptersTracking() {
 
   const toggleStudentSelection = (studentId: string) => {
     setSelectedStudentIds((prev) =>
-      prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId]
+      prev.includes(studentId)
+        ? prev.filter((id) => id !== studentId)
+        : [...prev, studentId]
     );
   };
 
@@ -296,9 +309,7 @@ export default function ChaptersTracking() {
                   <Label className="flex items-center gap-2">
                     <Users className="h-4 w-4" /> Select Students ({selectedStudentIds.length} selected)
                   </Label>
-                  <Button type="button" variant="outline" size="sm" onClick={selectAllStudents}>
-                    Select All
-                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={selectAllStudents}>Select All</Button>
                 </div>
 
                 <div className="mt-2">
@@ -321,8 +332,7 @@ export default function ChaptersTracking() {
                         onCheckedChange={() => toggleStudentSelection(student.id)}
                       />
                       <label htmlFor={student.id} className="text-sm font-medium leading-none cursor-pointer">
-                        {student.name} - Grade {student.grade}
-                        {presentToday.includes(student.id) && <span className="ml-2 text-green-600 text-xs">(Present Today)</span>}
+                        {student.name} - Grade {student.grade} {presentToday.includes(student.id) && <span className="ml-2 text-green-600 text-xs">(Present Today)</span>}
                       </label>
                     </div>
                   ))}
@@ -382,10 +392,9 @@ export default function ChaptersTracking() {
         <CardContent>
           <div className="space-y-4">
             {chapters.length === 0 && (
-              <p className="text-muted-foreground text-center py-8">
-                No chapters recorded yet
-              </p>
+              <p className="text-muted-foreground text-center py-8">No chapters recorded yet</p>
             )}
+
             {chapters.map((chapter: any) => {
               const isExpanded = expandedChapters[chapter.id] || false;
               return (
@@ -414,10 +423,7 @@ export default function ChaptersTracking() {
                       {isExpanded && (
                         <div className="flex flex-wrap gap-2 mt-2">
                           {chapter.student_chapters?.map((sc: any) => (
-                            <span
-                              key={sc.id}
-                              className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary"
-                            >
+                            <span key={sc.id} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">
                               {sc.students?.name} - Grade {sc.students?.grade}
                             </span>
                           ))}
