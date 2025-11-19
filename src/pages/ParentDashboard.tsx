@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -9,11 +9,21 @@ import { User, Calendar as CalendarIcon, BookOpen, FileText, LogOut } from 'luci
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths } from 'date-fns';
 
+// Initialize QueryClient (v4 syntax)
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60, // 1 min
+      retry: 1,
+    },
+  },
+});
+
 const MiniCalendar = ({ attendance, chapters, tests, selectedMonth, setSelectedMonth }) => {
   const daysInMonth = eachDayOfInterval({ start: startOfMonth(selectedMonth), end: endOfMonth(selectedMonth) });
 
   const getAttendanceStatus = (date: string) => {
-    const record = attendance.find(a => format(new Date(a.date), 'yyyy-MM-dd') === date);
+    const record = attendance.find((a: any) => format(new Date(a.date), 'yyyy-MM-dd') === date);
     if (!record) return 'none';
     return record.status === 'Present' ? 'present' : 'absent';
   };
@@ -58,13 +68,13 @@ const MiniCalendar = ({ attendance, chapters, tests, selectedMonth, setSelectedM
 
               {/* Tooltip */}
               {(tooltipData.dayChapters.length > 0 || tooltipData.dayTests.length > 0) && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-60 p-2 bg-white border rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10 text-xs">
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-56 p-2 bg-white border rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10 text-xs">
                   {tooltipData.dayChapters.length > 0 && (
                     <div className="mb-1">
                       <p className="font-semibold border-b mb-1">Chapters</p>
                       {tooltipData.dayChapters.map(c => (
                         <p key={c.id}>
-                          <strong>{c.chapters?.subject}</strong> - {c.chapters?.chapter_name} ({c.chapters?.notes || 'No Notes'})
+                          <span className="font-semibold">{c.chapters?.chapter_name}</span> ({c.chapters?.subject}) - {c.chapters?.notes || 'No notes'}
                         </p>
                       ))}
                     </div>
@@ -73,7 +83,9 @@ const MiniCalendar = ({ attendance, chapters, tests, selectedMonth, setSelectedM
                     <div>
                       <p className="font-semibold border-b mb-1">Tests</p>
                       {tooltipData.dayTests.map(t => (
-                        <p key={t.id}>{t.tests?.name}: {t.marks_obtained}/{t.tests?.total_marks}</p>
+                        <p key={t.id}>
+                          {t.tests?.name}: {t.marks_obtained}/{t.tests?.total_marks}
+                        </p>
                       ))}
                     </div>
                   )}
@@ -87,56 +99,75 @@ const MiniCalendar = ({ attendance, chapters, tests, selectedMonth, setSelectedM
   );
 };
 
-const ParentDashboard = () => {
+const ParentDashboardContent = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [showMiniCalendar, setShowMiniCalendar] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date());
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
+  const [dateRange, setDateRange] = useState<{from: string, to: string}>({from: '', to: ''});
 
   if (!user || user.role !== 'parent' || !user.student_id) {
     navigate('/login-parent');
     return null;
   }
 
-  const { data: student } = useQuery(['student', user.student_id], async () => {
-    const { data, error } = await supabase.from('students').select('*').eq('id', user.student_id).single();
-    if (error) throw error;
-    return data;
+  // Fetch student details
+  const { data: student } = useQuery({
+    queryKey: ['student', user.student_id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('students').select('*').eq('id', user.student_id).single();
+      if (error) throw error;
+      return data;
+    },
   });
 
-  const { data: attendance = [] } = useQuery(['attendance', user.student_id], async () => {
-    const { data, error } = await supabase.from('attendance').select('*').eq('student_id', user.student_id).order('date', { ascending: false });
-    if (error) throw error;
-    return data;
+  // Attendance
+  const { data: attendance = [] } = useQuery({
+    queryKey: ['attendance', user.student_id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('attendance').select('*').eq('student_id', user.student_id).order('date', { ascending: true });
+      if (error) throw error;
+      return data;
+    },
   });
 
-  const { data: testResults = [] } = useQuery(['test-results', user.student_id], async () => {
-    const { data, error } = await supabase.from('test_results').select('*, tests(*)').eq('student_id', user.student_id).order('date_taken', { ascending: false });
-    if (error) throw error;
-    return data;
+  // Tests
+  const { data: testResults = [] } = useQuery({
+    queryKey: ['test-results', user.student_id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('test_results').select('*, tests(*)').eq('student_id', user.student_id).order('date_taken', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
   });
 
-  const { data: chapters = [] } = useQuery(['chapters-studied', user.student_id], async () => {
-    const { data, error } = await supabase.from('student_chapters').select('*, chapters(*)').eq('student_id', user.student_id).order('date_completed', { ascending: false });
-    if (error) throw error;
-    return data;
+  // Chapters
+  const { data: chapters = [] } = useQuery({
+    queryKey: ['chapters-studied', user.student_id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('student_chapters').select('*, chapters(*)').eq('student_id', user.student_id).order('date_completed', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
   });
 
-  // Filtered Attendance
-  const filteredAttendance = attendance.filter(a => {
-    if (!startDate && !endDate) return true;
-    const date = new Date(a.date);
-    if (startDate && date < new Date(startDate)) return false;
-    if (endDate && date > new Date(endDate)) return false;
-    return true;
-  });
-
-  const totalDays = filteredAttendance.length;
-  const presentDays = filteredAttendance.filter(a => a.status === 'Present').length;
+  // Attendance summary
+  const totalDays = attendance.length;
+  const presentDays = attendance.filter(a => a.status === 'Present').length;
   const absentDays = totalDays - presentDays;
   const attendancePercentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
+
+  // Filtered attendance by date range
+  const filteredAttendance = attendance.filter(a => {
+    if (!dateRange.from || !dateRange.to) return true;
+    const date = new Date(a.date);
+    return date >= new Date(dateRange.from) && date <= new Date(dateRange.to);
+  });
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login-parent');
+  };
 
   return (
     <div className="min-h-screen bg-background p-6">
@@ -150,7 +181,7 @@ const ParentDashboard = () => {
               <p className="text-muted-foreground">Welcome, {user.username}</p>
             </div>
           </div>
-          <Button variant="outline" onClick={() => { logout(); navigate('/login-parent'); }}>
+          <Button variant="outline" onClick={handleLogout}>
             <LogOut className="h-4 w-4 mr-2" /> Logout
           </Button>
         </div>
@@ -182,7 +213,9 @@ const ParentDashboard = () => {
                   <p className="font-semibold">{student.contact_number}</p>
                 </div>
               </div>
-            ) : <p className="text-muted-foreground">No student data available</p>}
+            ) : (
+              <p className="text-muted-foreground">No student data available</p>
+            )}
           </CardContent>
         </Card>
 
@@ -196,8 +229,22 @@ const ParentDashboard = () => {
           </Button>
         </div>
         {showMiniCalendar && (
-          <MiniCalendar attendance={attendance} chapters={chapters} tests={testResults} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} />
+          <MiniCalendar
+            attendance={attendance}
+            chapters={chapters}
+            tests={testResults}
+            selectedMonth={selectedMonth}
+            setSelectedMonth={setSelectedMonth}
+          />
         )}
+
+        {/* Date Range Filter */}
+        <div className="flex items-center gap-2">
+          <label>From:</label>
+          <input type="date" value={dateRange.from} onChange={e => setDateRange({...dateRange, from: e.target.value})} className="border p-1 rounded"/>
+          <label>To:</label>
+          <input type="date" value={dateRange.to} onChange={e => setDateRange({...dateRange, to: e.target.value})} className="border p-1 rounded"/>
+        </div>
 
         {/* ATTENDANCE SUMMARY */}
         <Card>
@@ -207,12 +254,6 @@ const ParentDashboard = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Date Range Filter */}
-            <div className="flex gap-2 mb-4">
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border rounded p-1" />
-              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border rounded p-1" />
-            </div>
-
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               <div className="text-center p-4 bg-blue-50 rounded-lg">
                 <p className="text-2xl font-bold text-blue-600">{totalDays}</p>
@@ -231,23 +272,35 @@ const ParentDashboard = () => {
                 <p className="text-sm text-muted-foreground">Attendance</p>
               </div>
             </div>
+            <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div className="h-full bg-green-600 transition-all duration-300" style={{ width: `${attendancePercentage}%` }} />
+            </div>
+          </CardContent>
+        </Card>
 
-            {/* Daily Attendance Table */}
-            <div className="overflow-auto max-h-96">
+        {/* DAILY ATTENDANCE TABLE */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CalendarIcon className="h-5 w-5" /> Daily Attendance
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto max-h-64">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Date</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Remarks</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredAttendance.map(a => (
                     <TableRow key={a.id}>
                       <TableCell>{new Date(a.date).toLocaleDateString()}</TableCell>
-                      <TableCell>{a.status}</TableCell>
-                      <TableCell>{a.remarks || '-'}</TableCell>
+                      <TableCell className={a.status === 'Present' ? 'text-green-600' : 'text-red-600'}>
+                        {a.status}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -263,35 +316,43 @@ const ParentDashboard = () => {
               <FileText className="h-5 w-5" /> Test Results
             </CardTitle>
           </CardHeader>
-          <CardContent className="overflow-auto max-h-96">
+          <CardContent>
             {testResults.length === 0 ? (
               <p className="text-muted-foreground text-center py-8">No test results available</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Test Name</TableHead>
-                    <TableHead>Subject</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Marks</TableHead>
-                    <TableHead>Percentage</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {testResults.map(result => {
-                    const percentage = result.tests?.total_marks ? Math.round((result.marks_obtained / result.tests.total_marks) * 100) : 0;
-                    return (
-                      <TableRow key={result.id}>
-                        <TableCell>{result.tests?.name || '-'}</TableCell>
-                        <TableCell>{result.tests?.subject || '-'}</TableCell>
-                        <TableCell>{new Date(result.date_taken).toLocaleDateString()}</TableCell>
-                        <TableCell>{result.marks_obtained}/{result.tests?.total_marks || 0}</TableCell>
-                        <TableCell className={`${percentage>=75?'text-green-600':percentage>=50?'text-yellow-600':'text-red-600'} font-semibold`}>{percentage}%</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+              <div className="overflow-x-auto max-h-64">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Test Name</TableHead>
+                      <TableHead>Subject</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Marks</TableHead>
+                      <TableHead>Percentage</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {testResults.map(result => {
+                      const percentage = result.tests?.total_marks
+                        ? Math.round((result.marks_obtained / result.tests.total_marks) * 100)
+                        : 0;
+                      return (
+                        <TableRow key={result.id}>
+                          <TableCell>{result.tests?.name || '-'}</TableCell>
+                          <TableCell>{result.tests?.subject || '-'}</TableCell>
+                          <TableCell>{new Date(result.date_taken).toLocaleDateString()}</TableCell>
+                          <TableCell>{result.marks_obtained}/{result.tests?.total_marks || 0}</TableCell>
+                          <TableCell className={
+                            percentage >= 75 ? 'text-green-600 font-semibold' :
+                            percentage >= 50 ? 'text-yellow-600 font-semibold' :
+                            'text-red-600 font-semibold'
+                          }>{percentage}%</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -303,30 +364,32 @@ const ParentDashboard = () => {
               <BookOpen className="h-5 w-5" /> Chapters Studied
             </CardTitle>
           </CardHeader>
-          <CardContent className="overflow-auto max-h-96">
+          <CardContent>
             {chapters.length === 0 ? (
               <p className="text-muted-foreground text-center py-8">No chapters recorded</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Subject</TableHead>
-                    <TableHead>Chapter Name</TableHead>
-                    <TableHead>Date Completed</TableHead>
-                    <TableHead>Notes</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {chapters.map(c => (
-                    <TableRow key={c.id}>
-                      <TableCell>{c.chapters?.subject || '-'}</TableCell>
-                      <TableCell>{c.chapters?.chapter_name || '-'}</TableCell>
-                      <TableCell>{c.date_completed ? new Date(c.date_completed).toLocaleDateString() : '-'}</TableCell>
-                      <TableCell>{c.chapters?.notes || '-'}</TableCell>
+              <div className="overflow-x-auto max-h-64">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Subject</TableHead>
+                      <TableHead>Chapter Name</TableHead>
+                      <TableHead>Date Completed</TableHead>
+                      <TableHead>Notes</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {chapters.map(chapter => (
+                      <TableRow key={chapter.id}>
+                        <TableCell>{chapter.chapters?.subject || '-'}</TableCell>
+                        <TableCell>{chapter.chapters?.chapter_name || '-'}</TableCell>
+                        <TableCell>{chapter.date_completed ? new Date(chapter.date_completed).toLocaleDateString() : '-'}</TableCell>
+                        <TableCell>{chapter.chapters?.notes || '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -334,5 +397,11 @@ const ParentDashboard = () => {
     </div>
   );
 };
+
+const ParentDashboard = () => (
+  <QueryClientProvider client={queryClient}>
+    <ParentDashboardContent />
+  </QueryClientProvider>
+);
 
 export default ParentDashboard;
