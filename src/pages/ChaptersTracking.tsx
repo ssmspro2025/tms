@@ -36,11 +36,9 @@ export default function ChaptersTracking() {
         .from("students")
         .select("*")
         .order("name");
-
       if (user?.role !== "admin" && user?.center_id) {
         query = query.eq("center_id", user.center_id);
       }
-
       const { data, error } = await query;
       if (error) throw error;
       return data;
@@ -57,7 +55,6 @@ export default function ChaptersTracking() {
         .order("date_taught", { ascending: false });
 
       if (filterSubject !== "all") query = query.eq("subject", filterSubject);
-
       const { data, error } = await query;
       if (error) throw error;
 
@@ -89,10 +86,8 @@ export default function ChaptersTracking() {
     queryKey: ["unique-chapters", user?.center_id],
     queryFn: async () => {
       let query = supabase.from("chapters").select("id, subject, chapter_name");
-
       const { data, error } = await query;
       if (error) throw error;
-
       const seen = new Set<string>();
       const unique = [];
       for (const chapter of data) {
@@ -110,19 +105,12 @@ export default function ChaptersTracking() {
   const addChapterMutation = useMutation({
     mutationFn: async () => {
       let chapterId: string;
-
       if (selectedChapterId) {
         const selectedChapter = uniqueChapters.find(c => c.id === selectedChapterId);
         if (!selectedChapter) throw new Error("Chapter not found");
-
         const { data: chapterData, error } = await supabase
           .from("chapters")
-          .insert({
-            subject: selectedChapter.subject,
-            chapter_name: selectedChapter.chapter_name,
-            date_taught: date,
-            notes: notes || null,
-          })
+          .insert({ subject: selectedChapter.subject, chapter_name: selectedChapter.chapter_name, date_taught: date, notes: notes || null })
           .select()
           .single();
         if (error) throw error;
@@ -130,12 +118,7 @@ export default function ChaptersTracking() {
       } else if (subject && chapterName) {
         const { data: chapterData, error } = await supabase
           .from("chapters")
-          .insert({
-            subject,
-            chapter_name: chapterName,
-            date_taught: date,
-            notes: notes || null,
-          })
+          .insert({ subject, chapter_name, date_taught: date, notes: notes || null })
           .select()
           .single();
         if (error) throw error;
@@ -150,10 +133,7 @@ export default function ChaptersTracking() {
         completed: true,
         date_completed: date,
       }));
-
-      const { error: linkError } = await supabase
-        .from("student_chapters")
-        .insert(studentChapters);
+      const { error: linkError } = await supabase.from("student_chapters").insert(studentChapters);
       if (linkError) throw linkError;
     },
     onSuccess: () => {
@@ -188,11 +168,7 @@ export default function ChaptersTracking() {
   });
 
   const toggleStudentSelection = (studentId: string) => {
-    setSelectedStudentIds(prev =>
-      prev.includes(studentId)
-        ? prev.filter(id => id !== studentId)
-        : [...prev, studentId]
-    );
+    setSelectedStudentIds(prev => prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]);
   };
 
   const selectAllStudents = () => {
@@ -209,24 +185,19 @@ export default function ChaptersTracking() {
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Record Chapter
+              <Plus className="h-4 w-4 mr-2" /> Record Chapter
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Record Chapter</DialogTitle>
-              <DialogDescription>
-                Select a previously taught chapter or create a new one
-              </DialogDescription>
+              <DialogDescription> Select a previously taught chapter or create a new one </DialogDescription>
             </DialogHeader>
-
             <div className="space-y-4 py-4">
               <div>
                 <Label>Date</Label>
                 <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
               </div>
-
               <div className={`space-y-3 border rounded-lg p-4 ${selectedChapterId ? "border-primary" : ""}`}>
                 <Label className="text-base font-semibold">Select from Previous Chapters</Label>
                 {uniqueChapters.length > 0 ? (
@@ -246,7 +217,6 @@ export default function ChaptersTracking() {
                   <p className="text-sm text-muted-foreground">No previous chapters found.</p>
                 )}
               </div>
-
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
                   <span className="w-full border-t" />
@@ -255,7 +225,6 @@ export default function ChaptersTracking() {
                   <span className="bg-background px-2 text-muted-foreground">Or</span>
                 </div>
               </div>
-
               <div className={`space-y-3 border rounded-lg p-4 ${subject && chapterName ? "border-primary" : ""}`}>
                 <Label className="text-base font-semibold">Create New Chapter</Label>
                 <div className="grid grid-cols-2 gap-4">
@@ -269,47 +238,47 @@ export default function ChaptersTracking() {
                   </div>
                 </div>
               </div>
-
               <div>
                 <Label>Notes (Optional)</Label>
                 <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional notes..." rows={2} />
               </div>
 
+              {/* STUDENTS + GRADE FILTER */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <Label className="flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Select Students ({selectedStudentIds.length} selected)
+                    <Users className="h-4 w-4" /> Select Students ({selectedStudentIds.length} selected)
                   </Label>
-                  <Button type="button" variant="outline" size="sm" onClick={selectAllStudents}>
-                    Select All
-                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={selectAllStudents}> Select All </Button>
                 </div>
+
+                {/* Grade Filter */}
+                <div className="mt-2">
+                  <Label>Filter by Grade</Label>
+                  <Select value={filterGrade} onValueChange={setFilterGrade}>
+                    <SelectTrigger><SelectValue placeholder="All Grades" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Grades</SelectItem>
+                      {grades.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
-                  {students.map((student) => (
-                    <div key={student.id} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={student.id}
-                        checked={selectedStudentIds.includes(student.id)}
-                        onCheckedChange={() => toggleStudentSelection(student.id)}
-                      />
-                      <label htmlFor={student.id} className="text-sm font-medium leading-none cursor-pointer">
-                        {student.name} - Grade {student.grade}
-                      </label>
-                    </div>
-                  ))}
+                  {students
+                    .filter(s => filterGrade === "all" || s.grade === filterGrade)
+                    .map((student) => (
+                      <div key={student.id} className="flex items-center space-x-2">
+                        <Checkbox id={student.id} checked={selectedStudentIds.includes(student.id)} onCheckedChange={() => toggleStudentSelection(student.id)} />
+                        <label htmlFor={student.id} className="text-sm font-medium leading-none cursor-pointer">
+                          {student.name} - Grade {student.grade}
+                        </label>
+                      </div>
+                    ))}
                 </div>
               </div>
 
-              <Button
-                onClick={() => addChapterMutation.mutate()}
-                disabled={
-                  selectedStudentIds.length === 0 ||
-                  (!selectedChapterId && (!subject || !chapterName)) ||
-                  addChapterMutation.isPending
-                }
-                className="w-full"
-              >
+              <Button onClick={() => addChapterMutation.mutate()} disabled={selectedStudentIds.length === 0 || (!selectedChapterId && (!subject || !chapterName)) || addChapterMutation.isPending} className="w-full">
                 Record Chapter for {selectedStudentIds.length} Student(s)
               </Button>
             </div>
@@ -363,9 +332,7 @@ export default function ChaptersTracking() {
                       <h3 className="font-semibold text-lg">{chapter.chapter_name}</h3>
                       <span className="text-sm text-muted-foreground">{chapter.subject}</span>
                     </div>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Date Taught: {format(new Date(chapter.date_taught), "PPP")}
-                    </p>
+                    <p className="text-sm text-muted-foreground mb-2"> Date Taught: {format(new Date(chapter.date_taught), "PPP")} </p>
                     {chapter.notes && <p className="text-sm mb-2">{chapter.notes}</p>}
                     <div className="flex flex-wrap gap-2 mt-3">
                       {chapter.student_chapters?.map((sc: any) => (
