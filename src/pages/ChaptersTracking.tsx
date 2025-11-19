@@ -30,31 +30,34 @@ export default function ChaptersTracking() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
 
-  // Fetch students
+  // Fetch students for this center
   const { data: students = [] } = useQuery({
     queryKey: ["students", user?.center_id],
     queryFn: async () => {
-      let query = supabase.from("students").select("*").order("name");
-      if (user?.role !== "admin" && user?.center_id) {
-        query = query.eq("center_id", user.center_id);
-      }
-      const { data, error } = await query;
+      if (!user?.center_id) return [];
+      const { data, error } = await supabase
+        .from("students")
+        .select("*")
+        .eq("center_id", user.center_id)
+        .order("name");
       if (error) throw error;
       return data;
     },
   });
 
-  // Fetch present students for selected date
+  // Fetch present students for selected date (filtered by center)
   const { data: presentToday = [] } = useQuery({
     queryKey: ["present-students", date, user?.center_id],
     queryFn: async () => {
+      if (!user?.center_id) return [];
       const { data, error } = await supabase
         .from("attendance")
         .select("student_id")
         .eq("date", date)
         .eq("status", "present");
       if (error) throw error;
-      return data.map((d: any) => d.student_id);
+      // Only keep students from this center
+      return data.map((d: any) => d.student_id).filter((id) => students.some((s) => s.id === id));
     },
   });
 
@@ -63,21 +66,27 @@ export default function ChaptersTracking() {
     (s) => filterGrade === "all" || s.grade === filterGrade
   );
 
-  // Auto-select present students whenever date, grade, or student list changes
+  // Auto-select present students whenever date, grade, or students change
   useEffect(() => {
-    const presentIds = filteredStudents
-      .filter((s) => presentToday.includes(s.id))
-      .map((s) => s.id);
-    setSelectedStudentIds(presentIds);
+    if (presentToday.length > 0) {
+      const presentIds = filteredStudents
+        .filter((s) => presentToday.includes(s.id))
+        .map((s) => s.id);
+      setSelectedStudentIds(presentIds);
+    } else {
+      setSelectedStudentIds([]);
+    }
   }, [date, filterGrade, students, presentToday]);
 
-  // Fetch chapters
+  // Fetch chapters for this center
   const { data: chapters = [] } = useQuery({
     queryKey: ["chapters", filterSubject, filterStudent, filterGrade, user?.center_id],
     queryFn: async () => {
+      if (!user?.center_id) return [];
       let query = supabase
         .from("chapters")
         .select("*, student_chapters(*, students(name, grade, center_id))")
+        .eq("center_id", user.center_id)
         .order("date_taught", { ascending: false });
 
       if (filterSubject !== "all") query = query.eq("subject", filterSubject);
@@ -86,7 +95,7 @@ export default function ChaptersTracking() {
       if (error) throw error;
 
       let filtered = data.filter((chapter: any) =>
-        chapter.student_chapters.some((sc: any) => sc.students.center_id === user?.center_id)
+        chapter.student_chapters.some((sc: any) => sc.students?.center_id === user.center_id)
       );
 
       if (filterStudent !== "all") {
@@ -105,11 +114,15 @@ export default function ChaptersTracking() {
     },
   });
 
-  // Fetch unique chapters
+  // Fetch unique chapters for selection (only this center)
   const { data: uniqueChapters = [] } = useQuery({
     queryKey: ["unique-chapters", user?.center_id],
     queryFn: async () => {
-      const { data, error } = await supabase.from("chapters").select("id, subject, chapter_name");
+      if (!user?.center_id) return [];
+      const { data, error } = await supabase
+        .from("chapters")
+        .select("id, subject, chapter_name")
+        .eq("center_id", user.center_id);
       if (error) throw error;
 
       const seen = new Set<string>();
@@ -128,7 +141,9 @@ export default function ChaptersTracking() {
   // Add chapter
   const addChapterMutation = useMutation({
     mutationFn: async () => {
+      if (!user?.center_id) throw new Error("User center not found");
       let chapterId: string;
+
       if (selectedChapterId) {
         const selectedChapter = uniqueChapters.find((c) => c.id === selectedChapterId);
         if (!selectedChapter) throw new Error("Chapter not found");
@@ -140,6 +155,7 @@ export default function ChaptersTracking() {
             chapter_name: selectedChapter.chapter_name,
             date_taught: date,
             notes: notes || null,
+            center_id: user.center_id,
           })
           .select()
           .single();
@@ -153,6 +169,7 @@ export default function ChaptersTracking() {
             chapter_name: chapterName,
             date_taught: date,
             notes: notes || null,
+            center_id: user.center_id,
           })
           .select()
           .single();
@@ -222,7 +239,7 @@ export default function ChaptersTracking() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header + Dialog for adding chapters */}
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Chapters Tracking</h1>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -239,13 +256,13 @@ export default function ChaptersTracking() {
               </DialogDescription>
             </DialogHeader>
 
-            {/* Form */}
             <div className="space-y-4 py-4">
               <div>
                 <Label>Date</Label>
                 <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
               </div>
 
+              {/* Select Previous Chapter */}
               <div className={`space-y-3 border rounded-lg p-4 ${selectedChapterId ? "border-primary" : ""}`}>
                 <Label className="text-base font-semibold">Select from Previous Chapters</Label>
                 {uniqueChapters.length > 0 ? (
@@ -275,24 +292,17 @@ export default function ChaptersTracking() {
                 </div>
               </div>
 
+              {/* Create New Chapter */}
               <div className={`space-y-3 border rounded-lg p-4 ${subject && chapterName ? "border-primary" : ""}`}>
                 <Label className="text-base font-semibold">Create New Chapter</Label>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label>Subject</Label>
-                    <Input
-                      value={subject}
-                      onChange={(e) => setSubject(e.target.value)}
-                      placeholder="e.g., Mathematics"
-                    />
+                    <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g., Mathematics" />
                   </div>
                   <div>
                     <Label>Chapter Name</Label>
-                    <Input
-                      value={chapterName}
-                      onChange={(e) => setChapterName(e.target.value)}
-                      placeholder="e.g., Algebra"
-                    />
+                    <Input value={chapterName} onChange={(e) => setChapterName(e.target.value)} placeholder="e.g., Algebra" />
                   </div>
                 </div>
               </div>
@@ -302,30 +312,22 @@ export default function ChaptersTracking() {
                 <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional notes..." rows={2} />
               </div>
 
-              {/* Students + Grade Filter */}
+              {/* Student Selection */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <Label className="flex items-center gap-2">
                     <Users className="h-4 w-4" /> Select Students ({selectedStudentIds.length} selected)
                   </Label>
-                  <Button type="button" variant="outline" size="sm" onClick={selectAllStudents}>
-                    Select All
-                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={selectAllStudents}>Select All</Button>
                 </div>
 
                 <div className="mt-2">
                   <Label>Filter by Grade</Label>
                   <Select value={filterGrade} onValueChange={setFilterGrade}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All Grades" />
-                    </SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="All Grades" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Grades</SelectItem>
-                      {grades.map((g) => (
-                        <SelectItem key={g} value={g}>
-                          {g}
-                        </SelectItem>
-                      ))}
+                      {grades.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -333,14 +335,9 @@ export default function ChaptersTracking() {
                 <div className="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
                   {filteredStudents.map((student) => (
                     <div key={student.id} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={student.id}
-                        checked={selectedStudentIds.includes(student.id)}
-                        onCheckedChange={() => toggleStudentSelection(student.id)}
-                      />
+                      <Checkbox id={student.id} checked={selectedStudentIds.includes(student.id)} onCheckedChange={() => toggleStudentSelection(student.id)} />
                       <label htmlFor={student.id} className="text-sm font-medium leading-none cursor-pointer">
-                        {student.name} - Grade {student.grade}{" "}
-                        {presentToday.includes(student.id) && <span className="ml-2 text-green-600 text-xs">(Present Today)</span>}
+                        {student.name} - Grade {student.grade} {presentToday.includes(student.id) && <span className="ml-2 text-green-600 text-xs">(Present Today)</span>}
                       </label>
                     </div>
                   ))}
@@ -349,11 +346,7 @@ export default function ChaptersTracking() {
 
               <Button
                 onClick={() => addChapterMutation.mutate()}
-                disabled={
-                  selectedStudentIds.length === 0 ||
-                  (!selectedChapterId && (!subject || !chapterName)) ||
-                  addChapterMutation.isPending
-                }
+                disabled={selectedStudentIds.length === 0 || (!selectedChapterId && (!subject || !chapterName)) || addChapterMutation.isPending}
                 className="w-full"
               >
                 Record Chapter for {selectedStudentIds.length} Student(s)
@@ -371,59 +364,40 @@ export default function ChaptersTracking() {
             <div className="flex-1">
               <Label>Filter by Subject</Label>
               <Select value={filterSubject} onValueChange={setFilterSubject}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Subjects</SelectItem>
-                  {subjects.map((subj) => (
-                    <SelectItem key={subj} value={subj}>
-                      {subj}
-                    </SelectItem>
-                  ))}
+                  {subjects.map((subj) => <SelectItem key={subj} value={subj}>{subj}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-
             <div className="flex-1">
               <Label>Filter by Student</Label>
               <Select value={filterStudent} onValueChange={setFilterStudent}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Students</SelectItem>
-                  {students.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
+                  {students.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-
             <div className="flex-1">
               <Label>Filter by Grade</Label>
               <Select value={filterGrade} onValueChange={setFilterGrade}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Grades</SelectItem>
-                  {grades.map((g) => (
-                    <SelectItem key={g} value={g}>
-                      {g}
-                    </SelectItem>
-                  ))}
+                  {grades.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
           </div>
         </CardHeader>
-
         <CardContent>
           <div className="space-y-4">
-            {chapters.length === 0 && <p className="text-muted-foreground text-center py-8">No chapters recorded yet</p>}
+            {chapters.length === 0 && (
+              <p className="text-muted-foreground text-center py-8">No chapters recorded yet</p>
+            )}
             {chapters.map((chapter: any) => {
               const isExpanded = expandedChapters[chapter.id] || false;
               return (
@@ -438,7 +412,6 @@ export default function ChaptersTracking() {
                         Date Taught: {format(new Date(chapter.date_taught), "PPP")}
                       </p>
                       {chapter.notes && <p className="text-sm mb-2">{chapter.notes}</p>}
-
                       <Button
                         variant="outline"
                         size="sm"
@@ -448,21 +421,16 @@ export default function ChaptersTracking() {
                       >
                         {isExpanded ? "Hide Students" : "Show Students"}
                       </Button>
-
                       {isExpanded && (
                         <div className="flex flex-wrap gap-2 mt-2">
                           {chapter.student_chapters?.map((sc: any) => (
-                            <span
-                              key={sc.id}
-                              className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary"
-                            >
+                            <span key={sc.id} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">
                               {sc.students?.name} - Grade {sc.students?.grade}
                             </span>
                           ))}
                         </div>
                       )}
                     </div>
-
                     <Button variant="ghost" size="sm" onClick={() => deleteChapterMutation.mutate(chapter.id)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
