@@ -84,7 +84,7 @@ export default function TakeAttendance() {
         .from("attendance")
         .select("student_id, status, time_in, time_out, date")
         .eq("date", dateStr)
-        .in("student_id", centerStudentIds); // ⬅ FIX HERE
+        .in("student_id", centerStudentIds);
 
       if (error) throw error;
       return data;
@@ -143,14 +143,12 @@ export default function TakeAttendance() {
     mutationFn: async () => {
       if (!centerStudentIds.length) return;
 
-      // 🔥 Delete only attendance of this center (does not affect others)
       await supabase
         .from("attendance")
         .delete()
         .eq("date", dateStr)
         .in("student_id", centerStudentIds);
 
-      // Prepare insert records
       const records = students!.map((student) => ({
         student_id: student.id,
         date: dateStr,
@@ -186,32 +184,29 @@ export default function TakeAttendance() {
     }));
   };
 
+  /* ------------------- ✅ FIXED ------------------- */
   const markAllPresent = () => {
-    if (!students) return;
-    const updated: Record<string, AttendanceRecord> = {};
+    if (!filteredStudents) return;
+    const updated: Record<string, AttendanceRecord> = { ...attendance };
 
-    students.forEach((student) => {
-      updated[student.id] = { ...attendance[student.id], present: true };
+    filteredStudents.forEach((student) => {
+      updated[student.id] = { ...updated[student.id], present: true };
     });
 
     setAttendance(updated);
   };
 
   const markAllAbsent = () => {
-    if (!students) return;
-    const updated: Record<string, AttendanceRecord> = {};
+    if (!filteredStudents) return;
+    const updated: Record<string, AttendanceRecord> = { ...attendance };
 
-    students.forEach((student) => {
-      updated[student.id] = {
-        ...attendance[student.id],
-        present: false,
-        timeIn: "",
-        timeOut: "",
-      };
+    filteredStudents.forEach((student) => {
+      updated[student.id] = { ...updated[student.id], present: false, timeIn: "", timeOut: "" };
     });
 
     setAttendance(updated);
   };
+  /* ------------------- ✅ END FIX ------------------- */
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
