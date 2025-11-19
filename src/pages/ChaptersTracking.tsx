@@ -13,15 +13,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { toast } from "sonner";
 import { Trash2, Users, Plus } from "lucide-react";
 import { format } from "date-fns";
-import { Database } from "@/types/supabase"; // your Database type
-import { Tables } from "@/types/supabase";
-
-type ChapterRow = Tables<"chapters">;
-type StudentChapterRow = Tables<"student_chapters"> & { students?: Tables<"students"> };
 
 export default function ChaptersTracking() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [subject, setSubject] = useState("");
@@ -33,57 +29,49 @@ export default function ChaptersTracking() {
   const [selectedChapterId, setSelectedChapterId] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  // Fetch students for the center
+  // Fetch students for this center
   const { data: students = [] } = useQuery({
     queryKey: ["students", user?.center_id],
     queryFn: async () => {
-      let query = supabase.from("students").select("*").order("name");
-      if (user?.role !== "admin" && user?.center_id) query = query.eq("center_id", user.center_id);
+      let query = supabase
+        .from("students")
+        .select("*")
+        .order("name");
+      if (user?.role !== "admin" && user?.center_id) {
+        query = query.eq("center_id", user.center_id);
+      }
       const { data, error } = await query;
       if (error) throw error;
       return data || [];
     },
   });
 
-  // Fetch chapters with student_chapters + students info
+  // Fetch chapters with linked student_chapters and students
   const { data: chapters = [] } = useQuery({
     queryKey: ["chapters", filterSubject, filterStudent, filterGrade, user?.center_id],
     queryFn: async () => {
       let query = supabase
         .from("chapters")
-        .select(`
-          id,
-          chapter_name,
-          subject,
-          date_taught,
-          notes,
-          student_chapters(
-            id,
-            student_id,
-            completed,
-            date_completed,
-            students(id, name, grade, center_id)
-          )
-        `)
+        .select("*, student_chapters(id, student_id, completed, date_completed, students(id, name, grade, center_id))")
         .order("date_taught", { ascending: false });
 
       if (filterSubject !== "all") query = query.eq("subject", filterSubject);
       const { data, error } = await query;
       if (error) throw error;
 
-      let filtered = data.filter((chapter: ChapterRow & { student_chapters: StudentChapterRow[] }) =>
-        chapter.student_chapters?.some((sc) => sc.students?.center_id === user?.center_id)
+      let filtered = data.filter((chapter: any) =>
+        chapter.student_chapters?.some((sc: any) => sc.students?.center_id === user?.center_id)
       );
 
       if (filterStudent !== "all") {
-        filtered = filtered.filter((chapter) =>
-          chapter.student_chapters?.some((sc) => sc.student_id === filterStudent)
+        filtered = filtered.filter((chapter: any) =>
+          chapter.student_chapters?.some((sc: any) => sc.student_id === filterStudent)
         );
       }
 
       if (filterGrade !== "all") {
-        filtered = filtered.filter((chapter) =>
-          chapter.student_chapters?.some((sc) => sc.students?.grade === filterGrade)
+        filtered = filtered.filter((chapter: any) =>
+          chapter.student_chapters?.some((sc: any) => sc.students?.grade === filterGrade)
         );
       }
 
@@ -92,17 +80,19 @@ export default function ChaptersTracking() {
     enabled: !!user,
   });
 
-  // Unique chapters for modal dropdown
+  // Fetch unique chapters for dropdown
   const { data: uniqueChapters = [] } = useQuery({
     queryKey: ["unique-chapters", user?.center_id],
     queryFn: async () => {
       let query = supabase.from("chapters").select("id, subject, chapter_name, center_id");
-      if (user?.role !== "admin" && user?.center_id) query = query.eq("center_id", user.center_id);
+      if (user?.role !== "admin" && user?.center_id) {
+        query = query.eq("center_id", user.center_id);
+      }
       const { data, error } = await query;
       if (error) throw error;
 
       const seen = new Set<string>();
-      const unique: typeof data = [];
+      const unique: any[] = [];
       for (const chapter of data || []) {
         const key = `${chapter.subject}|${chapter.chapter_name}`;
         if (!seen.has(key)) {
@@ -115,11 +105,11 @@ export default function ChaptersTracking() {
     enabled: !!user,
   });
 
-  // Fetch attendance for the selected date
+  // Fetch attendance for selected date
   const { data: attendanceForDate = [] } = useQuery({
     queryKey: ["attendance-by-date", date, user?.center_id],
     queryFn: async () => {
-      const studentIds = students.map((s) => s.id);
+      const studentIds = students.map((s: any) => s.id);
       if (!studentIds.length) return [];
       const { data, error } = await supabase
         .from("attendance")
@@ -137,7 +127,7 @@ export default function ChaptersTracking() {
     mutationFn: async () => {
       let chapterId: string;
       if (selectedChapterId) {
-        const selectedChapter = uniqueChapters.find((c) => c.id === selectedChapterId);
+        const selectedChapter = uniqueChapters.find((c: any) => c.id === selectedChapterId);
         if (!selectedChapter) throw new Error("Chapter not found");
         const { data: chapterData, error } = await supabase
           .from("chapters")
@@ -176,7 +166,6 @@ export default function ChaptersTracking() {
         completed: true,
         date_completed: date,
       }));
-
       if (studentChapters.length > 0) {
         const { error: linkError } = await supabase.from("student_chapters").insert(studentChapters);
         if (linkError) throw linkError;
@@ -186,6 +175,7 @@ export default function ChaptersTracking() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
       queryClient.invalidateQueries({ queryKey: ["unique-chapters"] });
+      queryClient.invalidateQueries({ queryKey: ["student-chapters"] });
       toast.success("Chapter recorded for selected students");
       setSelectedStudentIds([]);
       setSubject("");
@@ -199,7 +189,6 @@ export default function ChaptersTracking() {
     },
   });
 
-  // Delete chapter mutation
   const deleteChapterMutation = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from("chapters").delete().eq("id", id);
@@ -214,38 +203,37 @@ export default function ChaptersTracking() {
     },
   });
 
-  // Helpers
   const toggleStudentSelection = (studentId: string) => {
-    setSelectedStudentIds((prev) =>
-      prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId]
-    );
+    setSelectedStudentIds((prev) => (prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId]));
   };
 
   const filteredStudentsForModal = useMemo(() => {
-    return (students || []).filter((s) => filterGrade === "all" || s.grade === filterGrade);
+    return (students || []).filter((s: any) => (filterGrade === "all" ? true : s.grade === filterGrade));
   }, [students, filterGrade]);
 
   const selectAllStudents = () => {
-    setSelectedStudentIds(filteredStudentsForModal.map((s) => s.id));
+    setSelectedStudentIds(filteredStudentsForModal.map((s: any) => s.id));
   };
 
   const presentStudentIdsForDate: string[] = useMemo(() => {
-    return (attendanceForDate || []).filter((a) => a.status === "Present").map((a) => a.student_id);
+    return (attendanceForDate || [])
+      .filter((a: any) => a.status === "Present")
+      .map((a: any) => a.student_id);
   }, [attendanceForDate]);
 
   useEffect(() => {
     if (!students) return;
-    const currentFilteredIds = filteredStudentsForModal.map((s) => s.id);
+    const currentFilteredIds = filteredStudentsForModal.map((s: any) => s.id);
     const autoSelect = presentStudentIdsForDate.filter((id) => currentFilteredIds.includes(id));
     setSelectedStudentIds(autoSelect);
-  }, [filterGrade, date, attendanceForDate, students]);
+  }, [filterGrade, date, attendanceForDate, students, filteredStudentsForModal, presentStudentIdsForDate]);
 
-  const subjects = Array.from(new Set(chapters.map((c) => c.subject).filter(Boolean)));
-  const grades = Array.from(new Set(students.map((s) => s.grade).filter(Boolean)));
+  const subjects = Array.from(new Set(chapters.map((c: any) => c.subject).filter(Boolean)));
+  const grades = Array.from(new Set(students.map((s: any) => s.grade).filter(Boolean)));
 
   return (
     <div className="space-y-6">
-      {/* HEADER + RECORD CHAPTER MODAL */}
+      {/* Header + Record Chapter Modal */}
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Chapters Tracking</h1>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -254,10 +242,11 @@ export default function ChaptersTracking() {
               <Plus className="h-4 w-4 mr-2" /> Record Chapter
             </Button>
           </DialogTrigger>
+
           <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Record Chapter</DialogTitle>
-              <DialogDescription>Select a previously taught chapter or create a new one</DialogDescription>
+              <DialogDescription> Select a previously taught chapter or create a new one </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4 py-4">
@@ -274,7 +263,7 @@ export default function ChaptersTracking() {
                       <SelectValue placeholder="Choose a chapter..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {uniqueChapters.map((chapter) => (
+                      {uniqueChapters.map((chapter: any) => (
                         <SelectItem key={chapter.id} value={chapter.id}>
                           {chapter.subject} - {chapter.chapter_name}
                         </SelectItem>
@@ -314,15 +303,15 @@ export default function ChaptersTracking() {
                 <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional notes..." rows={2} />
               </div>
 
-              {/* STUDENTS + FILTER */}
+              {/* STUDENTS + GRADE FILTER */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <Label className="flex items-center gap-2">
                     <Users className="h-4 w-4" /> Select Students ({selectedStudentIds.length} selected)
                   </Label>
                   <div className="flex gap-2">
-                    <Button type="button" variant="outline" size="sm" onClick={selectAllStudents}>Select All</Button>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedStudentIds([])}>Clear</Button>
+                    <Button type="button" variant="outline" size="sm" onClick={selectAllStudents}> Select All </Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedStudentIds([])}> Clear </Button>
                   </div>
                 </div>
 
@@ -332,16 +321,19 @@ export default function ChaptersTracking() {
                     <SelectTrigger><SelectValue placeholder="All Grades" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Grades</SelectItem>
-                      {grades.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                      {grades.map((g: any) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div className="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
-                  {filteredStudentsForModal.map((student) => {
+                  {filteredStudentsForModal.map((student: any) => {
                     const isPresent = presentStudentIdsForDate.includes(student.id);
                     return (
-                      <div key={student.id} className={`flex items-center space-x-2 p-2 rounded ${isPresent ? "bg-green-50" : ""}`}>
+                      <div
+                        key={student.id}
+                        className={`flex items-center space-x-2 p-2 rounded ${isPresent ? "bg-green-50" : ""}`}
+                      >
                         <Checkbox
                           id={student.id}
                           checked={selectedStudentIds.includes(student.id)}
@@ -372,7 +364,7 @@ export default function ChaptersTracking() {
         </Dialog>
       </div>
 
-      {/* CHAPTER LIST */}
+      {/* Chapters List */}
       <Card>
         <CardHeader>
           <CardTitle>Chapters Taught</CardTitle>
@@ -383,7 +375,7 @@ export default function ChaptersTracking() {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Subjects</SelectItem>
-                  {subjects.map((subj) => <SelectItem key={subj} value={subj}>{subj}</SelectItem>)}
+                  {subjects.map((subj: any) => <SelectItem key={subj} value={subj}>{subj}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -394,7 +386,7 @@ export default function ChaptersTracking() {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Students</SelectItem>
-                  {students.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                  {students.map((s: any) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -405,7 +397,7 @@ export default function ChaptersTracking() {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Grades</SelectItem>
-                  {grades.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                  {grades.map((g: any) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -414,7 +406,7 @@ export default function ChaptersTracking() {
 
         <CardContent>
           <div className="space-y-4">
-            {chapters.map((chapter) => (
+            {chapters.map((chapter: any) => (
               <div key={chapter.id} className="border rounded-lg p-4">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -422,23 +414,17 @@ export default function ChaptersTracking() {
                       <h3 className="font-semibold text-lg">{chapter.chapter_name ?? "Unnamed Chapter"}</h3>
                       <span className="text-sm text-muted-foreground">{chapter.subject}</span>
                     </div>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Date Taught: {format(new Date(chapter.date_taught), "PPP")}
-                    </p>
+                    <p className="text-sm text-muted-foreground mb-2"> Date Taught: {format(new Date(chapter.date_taught), "PPP")} </p>
                     {chapter.notes && <p className="text-sm mb-2">{chapter.notes}</p>}
                     <div className="flex flex-wrap gap-2 mt-3">
-                      {chapter.student_chapters?.map((sc) => (
-                        <span key={sc.id ?? `${sc.student_id}-${chapter.id}`} className="px-2 py-1 rounded bg-blue-50 text-blue-800 text-xs">
+                      {chapter.student_chapters?.map((sc: any) => (
+                        <span key={sc.id} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">
                           {sc.students?.name} - Grade {sc.students?.grade}
                         </span>
                       ))}
                     </div>
                   </div>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => deleteChapterMutation.mutate(chapter.id)}
-                  >
+                  <Button variant="destructive" size="sm" onClick={() => deleteChapterMutation.mutate(chapter.id)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
