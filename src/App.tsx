@@ -20,7 +20,9 @@ import Login from "./pages/Login";
 import AdminLogin from "./pages/AdminLogin";
 import ParentLogin from "./pages/ParentLogin";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminFinance from "./pages/AdminFinance";
 import ParentDashboard from "./pages/ParentDashboard";
+import ParentFinanceDashboard from "./pages/ParentFinanceDashboard";
 import InitAdmin from "./pages/InitAdmin";
 import NotFound from "./pages/NotFound";
 
@@ -39,6 +41,7 @@ const App = () => (
             <Route path="/login-admin" element={<AdminLogin />} />
             <Route path="/login-parent" element={<ParentLogin />} />
             <Route path="/parent-dashboard" element={<ProtectedRoute><ParentDashboard /></ProtectedRoute>} />
+            <Route path="/parent-finance" element={<ProtectedRoute><ParentFinanceDashboard /></ProtectedRoute>} />
             <Route path="/" element={<ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>} />
             <Route path="/register" element={<ProtectedRoute><Layout><RegisterStudent /></Layout></ProtectedRoute>} />
             <Route path="/attendance" element={<ProtectedRoute><Layout><TakeAttendance /></Layout></ProtectedRoute>} />
@@ -50,6 +53,7 @@ const App = () => (
             <Route path="/records" element={<ProtectedRoute><Layout><ViewRecords /></Layout></ProtectedRoute>} />
             <Route path="/summary" element={<ProtectedRoute><Layout><Summary /></Layout></ProtectedRoute>} />
             <Route path="/admin-dashboard" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
+            <Route path="/admin/finance" element={<ProtectedRoute adminOnly><AdminFinance /></ProtectedRoute>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
