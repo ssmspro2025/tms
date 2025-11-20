@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import * as bcrypt from 'bcryptjs';
 
 interface User {
   id: string;
@@ -38,26 +39,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     role?: 'admin' | 'center' | 'parent'
   ) => {
     try {
-      const { data, error } = await supabase.functions.invoke('auth-login', {
-        body: { username, password, role }
-      });
+      // Query database directly instead of using Edge Function
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id, username, password_hash, role, center_id, student_id, is_active, centers(center_name), students(name)')
+        .eq('username', username)
+        .eq('is_active', true)
+        .single();
 
-      if (error) throw error;
-
-      if (data.success) {
-        const userData = data.user;
-
-        // 🔹 Restrict parent accounts from logging in to center dashboard
-        if (role === 'center' && userData.role === 'parent') {
-          return { success: false, error: 'Parent accounts cannot log in to the center dashboard' };
-        }
-
-        setUser(userData);
-        localStorage.setItem('auth_user', JSON.stringify(userData));
-        return { success: true };
-      } else {
-        return { success: false, error: data.error || 'Invalid credentials' };
+      if (userError || !user) {
+        console.error('User not found:', userError);
+        return { success: false, error: 'Invalid username or password' };
       }
+
+      // Check if user role matches required role
+      if (role && user.role !== role) {
+        return { success: false, error: 'Invalid username or password' };
+      }
+
+      // Verify password using bcryptjs
+      const passwordMatch = await bcrypt.compare(password, user.password_hash);
+
+      if (!passwordMatch) {
+        console.error('Password verification failed for user:', username);
+        return { success: false, error: 'Invalid username or password' };
+      }
+
+      // Restrict parent accounts from logging in to center dashboard
+      if (role === 'center' && user.role === 'parent') {
+        return { success: false, error: 'Parent accounts cannot log in to the center dashboard' };
+      }
+
+      // Update last login
+      await supabase
+        .from('users')
+        .update({ last_login: new Date().toISOString() })
+        .eq('id', user.id);
+
+      // Prepare user data
+      const userData: User = {
+        id: user.id,
+        username: user.username,
+        role: user.role as 'admin' | 'center' | 'parent',
+        center_id: user.center_id,
+        center_name: (user.centers as any)?.center_name || undefined,
+        student_id: user.student_id,
+        student_name: (user.students as any)?.name || undefined
+      };
+
+      setUser(userData);
+      localStorage.setItem('auth_user', JSON.stringify(userData));
+      return { success: true };
     } catch (error: any) {
       console.error('Login error:', error);
       return { success: false, error: error.message || 'Login failed' };
