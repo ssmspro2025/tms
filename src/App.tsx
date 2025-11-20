@@ -52,6 +52,7 @@ const App = () => (
             <Route path="/ai-insights" element={<ProtectedRoute><Layout><AIInsights /></Layout></ProtectedRoute>} />
             <Route path="/records" element={<ProtectedRoute><Layout><ViewRecords /></Layout></ProtectedRoute>} />
             <Route path="/summary" element={<ProtectedRoute><Layout><Summary /></Layout></ProtectedRoute>} />
+            <Route path="/finance" element={<ProtectedRoute><Layout><AdminFinance /></Layout></ProtectedRoute>} />
             <Route path="/admin-dashboard" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
             <Route path="/admin/finance" element={<ProtectedRoute adminOnly><AdminFinance /></ProtectedRoute>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

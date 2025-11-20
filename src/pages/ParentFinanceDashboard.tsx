@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Invoice } from '@/integrations/supabase/finance-types';
-import { AlertCircle, Download, Eye } from 'lucide-react';
+import { AlertCircle, Download, Eye, ArrowLeft } from 'lucide-react';
 
 const ParentFinanceDashboard = () => {
   const { user } = useAuth();
@@ -111,11 +111,17 @@ const ParentFinanceDashboard = () => {
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2">Finance & Invoices</h1>
-          <p className="text-muted-foreground">
-            Student: <span className="font-semibold">{student?.name}</span>
-          </p>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-4xl font-bold mb-2">Finance & Invoices</h1>
+            <p className="text-muted-foreground">
+              Student: <span className="font-semibold">{student?.name}</span>
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => navigate('/parent-dashboard')}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Dashboard
+          </Button>
         </div>
 
         {/* Alert for Overdue */}

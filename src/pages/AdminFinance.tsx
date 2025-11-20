@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FinancialSummary as FinancialSummaryType } from '@/integrations/supabase/finance-types';
-import { DollarSign, TrendingUp, TrendingDown, Wallet, AlertCircle, FileText } from 'lucide-react';
+import { DollarSign, TrendingUp, TrendingDown, Wallet, AlertCircle, FileText, ArrowLeft } from 'lucide-react';
 import FeeManagement from '@/components/finance/FeeManagement';
 import InvoiceManagement from '@/components/finance/InvoiceManagement';
 import PaymentTracking from '@/components/finance/PaymentTracking';
@@ -81,9 +81,15 @@ const AdminFinance = () => {
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2">Finance Management</h1>
-          <p className="text-muted-foreground">Manage fees, invoices, payments, and financial reports</p>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-4xl font-bold mb-2">Finance Management</h1>
+            <p className="text-muted-foreground">Manage fees, invoices, payments, and financial reports</p>
+          </div>
+          <Button variant="outline" onClick={() => navigate('/admin-dashboard')}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Dashboard
+          </Button>
         </div>
 
         {/* Summary Cards */}
