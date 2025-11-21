@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth to get the user's access token
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
@@ -24,7 +24,7 @@ const TEACHER_FEATURES = [
 
 export default function TeacherFeaturePermissions({ teacherId, teacherName }: { teacherId: string; teacherName: string }) {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user } = useAuth(); // Get the current user to pass the access token
 
   // Fetch teacher's feature permissions
   const { data: permissions = [], isLoading: permissionsLoading } = useQuery({
@@ -46,18 +46,18 @@ export default function TeacherFeaturePermissions({ teacherId, teacherName }: { 
     return acc;
   }, {} as Record<string, boolean>);
 
-  // Mutation to update feature permission
+  // Mutation to update feature permission via Edge Function
   const updatePermissionMutation = useMutation({
     mutationFn: async ({ featureName, isEnabled }: { featureName: string; isEnabled: boolean }) => {
-      const { data, error } = await supabase
-        .from('teacher_feature_permissions')
-        .upsert(
-          { teacher_id: teacherId, feature_name: featureName, is_enabled: isEnabled },
-          { onConflict: 'teacher_id, feature_name' }
-        )
-        .select()
-        .single();
+      const { data, error } = await supabase.functions.invoke('center-toggle-teacher-feature', {
+        body: { teacherId, featureName, isEnabled },
+        headers: {
+          Authorization: `Bearer ${(await supabase.auth.getSession())?.data.session?.access_token}`,
+        },
+      });
+
       if (error) throw error;
+      if (!data.success) throw new Error(data.error || 'Failed to update permission via Edge Function');
       return data;
     },
     onSuccess: () => {

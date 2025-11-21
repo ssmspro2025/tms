@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth to get the user's access token
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
@@ -32,6 +33,7 @@ const FEATURES = [
 
 export default function CenterFeaturePermissions() {
   const queryClient = useQueryClient();
+  const { user } = useAuth(); // Get the current user to pass the access token
 
   // Fetch all centers
   const { data: centers = [], isLoading: centersLoading } = useQuery({
@@ -67,18 +69,18 @@ export default function CenterFeaturePermissions() {
     return acc;
   }, {} as Record<string, Record<string, boolean>>);
 
-  // Mutation to update feature permission
+  // Mutation to update feature permission via Edge Function
   const updatePermissionMutation = useMutation({
     mutationFn: async ({ centerId, featureName, isEnabled }: { centerId: string; featureName: string; isEnabled: boolean }) => {
-      const { data, error } = await supabase
-        .from('center_feature_permissions')
-        .upsert(
-          { center_id: centerId, feature_name: featureName, is_enabled: isEnabled },
-          { onConflict: 'center_id, feature_name' }
-        )
-        .select()
-        .single();
+      const { data, error } = await supabase.functions.invoke('admin-toggle-center-feature', {
+        body: { centerId, featureName, isEnabled },
+        headers: {
+          Authorization: `Bearer ${(await supabase.auth.getSession())?.data.session?.access_token}`,
+        },
+      });
+
       if (error) throw error;
+      if (!data.success) throw new Error(data.error || 'Failed to update permission via Edge Function');
       return data;
     },
     onSuccess: () => {
