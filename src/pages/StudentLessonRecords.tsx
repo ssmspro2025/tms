@@ -12,8 +12,8 @@ import { CheckCircle, Clock, XCircle } from "lucide-react";
 
 const StudentLessonRecords = () => {
   const { user } = useAuth();
-  const [selectedStudent, setSelectedStudent] = useState<string>("");
-  const [selectedLesson, setSelectedLesson] = useState<string>("");
+  const [selectedStudent, setSelectedStudent] = useState<string>("__all__");
+  const [selectedLesson, setSelectedLesson] = useState<string>("__all__");
 
   // Fetch students
   const { data: students = [] } = useQuery({
@@ -49,18 +49,19 @@ const StudentLessonRecords = () => {
   const { data: records = [], refetch } = useQuery({
     queryKey: ["student-lesson-records", selectedStudent, selectedLesson],
     queryFn: async () => {
-      if (!selectedStudent && !selectedLesson) return [];
+      // Don't fetch if we're showing "all" for both filters
+      if (selectedStudent === "__all__" && selectedLesson === "__all__") return [];
       
       let query = supabase
         .from("student_lesson_records")
         .select("*, students(name), lesson_plans(subject, chapter, topic)")
         .order("taught_date", { ascending: false });
 
-      if (selectedStudent) {
+      if (selectedStudent !== "__all__") {
         query = query.eq("student_id", selectedStudent);
       }
 
-      if (selectedLesson) {
+      if (selectedLesson !== "__all__") {
         query = query.eq("lesson_plan_id", selectedLesson);
       }
 
@@ -107,12 +108,12 @@ const StudentLessonRecords = () => {
         <CardContent className="flex gap-4">
           <div className="flex-1">
             <label className="text-sm font-medium">Student</label>
-            <Select value={selectedStudent || ""} onValueChange={setSelectedStudent}>
+            <Select value={selectedStudent} onValueChange={setSelectedStudent}>
               <SelectTrigger>
                 <SelectValue placeholder="Select student" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Students</SelectItem>
+                <SelectItem value="__all__">All Students</SelectItem>
                 {students.map((student: any) => (
                   <SelectItem key={student.id} value={student.id}>
                     {student.name} - {student.grade}
@@ -123,12 +124,12 @@ const StudentLessonRecords = () => {
           </div>
           <div className="flex-1">
             <label className="text-sm font-medium">Lesson Plan</label>
-            <Select value={selectedLesson || ""} onValueChange={setSelectedLesson}>
+            <Select value={selectedLesson} onValueChange={setSelectedLesson}>
               <SelectTrigger>
                 <SelectValue placeholder="Select lesson plan" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Lesson Plans</SelectItem>
+                <SelectItem value="__all__">All Lesson Plans</SelectItem>
                 {lessonPlans.map((lesson: any) => (
                   <SelectItem key={lesson.id} value={lesson.id}>
                     {lesson.subject} - {lesson.chapter} - {lesson.topic}
