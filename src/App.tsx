@@ -8,6 +8,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import CenterLayout from "./components/CenterLayout";
 import AdminLayout from "./components/AdminLayout";
 import ParentLayout from "./components/ParentLayout";
+import TeacherLayout from "./components/TeacherLayout"; // NEW
 import Dashboard from "./pages/Dashboard";
 import RegisterStudent from "./pages/RegisterStudent";
 import TakeAttendance from "./pages/TakeAttendance";
@@ -34,10 +35,11 @@ import ParentFinanceDashboard from "./pages/ParentFinanceDashboard";
 import ParentHomework from "./pages/ParentHomework";
 import ParentActivities from "./pages/ParentActivities";
 import ParentDiscipline from "./pages/ParentDiscipline";
+import TeacherDashboard from "./pages/TeacherDashboard"; // NEW
 import InitAdmin from "./pages/InitAdmin";
 import NotFound from "./pages/NotFound";
 import Settings from "./pages/admin/Settings";
-import ChangePassword from "./pages/ChangePassword"; // NEW
+import ChangePassword from "./pages/ChangePassword";
 
 const queryClient = new QueryClient();
 
@@ -54,7 +56,7 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/login-admin" element={<AdminLogin />} />
             <Route path="/login-parent" element={<ParentLogin />} />
-            <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} /> {/* NEW */}
+            <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
 
             {/* Parent Routes */}
             <Route path="/parent-dashboard" element={<ProtectedRoute role="parent"><ParentLayout><ParentDashboard /></ParentLayout></ProtectedRoute>} />
@@ -62,6 +64,16 @@ const App = () => (
             <Route path="/parent-homework" element={<ProtectedRoute role="parent"><ParentLayout><ParentHomework /></ParentLayout></ProtectedRoute>} />
             <Route path="/parent-activities" element={<ProtectedRoute role="parent"><ParentLayout><ParentActivities /></ParentLayout></ProtectedRoute>} />
             <Route path="/parent-discipline" element={<ProtectedRoute role="parent"><ParentLayout><ParentDiscipline /></ParentLayout></ProtectedRoute>} />
+
+            {/* Teacher Routes */}
+            <Route path="/teacher-dashboard" element={<ProtectedRoute role="teacher"><TeacherLayout><TeacherDashboard /></TeacherLayout></ProtectedRoute>} />
+            <Route path="/teacher/take-attendance" element={<ProtectedRoute role="teacher"><TeacherLayout><TakeAttendance /></TeacherLayout></ProtectedRoute>} />
+            <Route path="/teacher/lesson-tracking" element={<ProtectedRoute role="teacher"><TeacherLayout><LessonTracking /></TeacherLayout></ProtectedRoute>} />
+            <Route path="/teacher/homework-management" element={<ProtectedRoute role="teacher"><TeacherLayout><HomeworkManagement /></TeacherLayout></ProtectedRoute>} />
+            <Route path="/teacher/preschool-activities" element={<ProtectedRoute role="teacher"><TeacherLayout><PreschoolActivities /></TeacherLayout></ProtectedRoute>} />
+            <Route path="/teacher/discipline-issues" element={<ProtectedRoute role="teacher"><TeacherLayout><DisciplineIssues /></TeacherLayout></ProtectedRoute>} />
+            <Route path="/teacher/test-management" element={<ProtectedRoute role="teacher"><TeacherLayout><Tests /></TeacherLayout></ProtectedRoute>} />
+            <Route path="/teacher/student-report" element={<ProtectedRoute role="teacher"><TeacherLayout><StudentReport /></TeacherLayout></ProtectedRoute>} />
 
             {/* Center Routes */}
             <Route path="/" element={<ProtectedRoute role="center"><CenterLayout><Dashboard /></CenterLayout></ProtectedRoute>} />

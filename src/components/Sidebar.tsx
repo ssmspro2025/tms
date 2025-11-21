@@ -28,28 +28,44 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useAuth } from "@/contexts/AuthContext"; // Import useAuth
 
 interface NavItem {
   to: string;
   label: string;
   icon: React.ElementType;
   role?: 'admin' | 'center' | 'parent' | 'teacher';
+  featureName?: string; // New prop for feature name
 }
 
 interface SidebarProps {
   navItems: NavItem[];
-  currentRole: 'admin' | 'center' | 'parent' | 'teacher';
   headerContent: React.ReactNode;
   footerContent: React.ReactNode;
 }
 
-export default function Sidebar({ navItems, currentRole, headerContent, footerContent }: SidebarProps) {
+export default function Sidebar({ navItems, headerContent, footerContent }: SidebarProps) {
   const location = useLocation();
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const { user } = useAuth(); // Get user from AuthContext
 
-  const filteredNavItems = navItems.filter(item => 
-    !item.role || item.role === currentRole
-  );
+  const filteredNavItems = navItems.filter(item => {
+    // Filter by role
+    if (item.role && user?.role !== item.role) {
+      return false;
+    }
+
+    // Filter by feature permissions
+    if (item.featureName) {
+      if (user?.role === 'center' && user.centerPermissions) {
+        return user.centerPermissions[item.featureName];
+      }
+      // For admin, we'll assume all features are visible in their own dashboard,
+      // but the toggle UI will be in AdminDashboard.
+      // For teachers, their specific permissions will be checked in their layout.
+    }
+    return true;
+  });
 
   return (
     <TooltipProvider>

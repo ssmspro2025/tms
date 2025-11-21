@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { useToast } from '@/hooks/use-toast';
 import { Plus, Shield, Power, PowerOff, Edit } from 'lucide-react';
 import * as bcrypt from 'bcryptjs';
+import CenterFeaturePermissions from '@/components/admin/CenterFeaturePermissions'; // Import the new component
 
 const AdminDashboard = () => {
   const { user } = useAuth();
@@ -87,6 +88,22 @@ const AdminDashboard = () => {
 
       if (userError) throw userError;
 
+      // Seed initial default permissions for the new center
+      const defaultFeatures = [
+        'register_student', 'take_attendance', 'attendance_summary', 'lesson_plans',
+        'lesson_tracking', 'homework', 'activities', 'discipline', 'teachers',
+        'teacher_attendance', 'tests', 'student_report', 'ai_insights',
+        'view_records', 'summary', 'finance'
+      ];
+      const permissionsToInsert = defaultFeatures.map(feature => ({
+        center_id: centerData.id,
+        feature_name: feature,
+        is_enabled: true,
+      }));
+      const { error: permError } = await supabase.from('center_feature_permissions').insert(permissionsToInsert);
+      if (permError) console.error('Error seeding default permissions for new center:', permError);
+
+
       return { success: true, center: centerData, user: userData };
     },
     onSuccess: () => {
@@ -97,6 +114,7 @@ const AdminDashboard = () => {
       setIsCreateDialogOpen(false);
       setNewCenter({ centerName: '', address: '', contactNumber: '', username: '', password: '' });
       queryClient.invalidateQueries({ queryKey: ['centers-with-users'] });
+      queryClient.invalidateQueries({ queryKey: ['center-feature-permissions'] }); // Invalidate permissions cache
     },
     onError: (error: any) => {
       toast({
@@ -199,8 +217,8 @@ const AdminDashboard = () => {
 
   return (
     <div className="min-h-screen bg-background p-6">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Shield className="h-8 w-8 text-destructive" />
             <h1 className="text-3xl font-bold">Admin Dashboard</h1>
@@ -386,6 +404,8 @@ const AdminDashboard = () => {
             )}
           </CardContent>
         </Card>
+
+        <CenterFeaturePermissions /> {/* New component for managing center permissions */}
       </div>
     </div>
   );

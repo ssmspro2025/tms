@@ -7,23 +7,23 @@ import Sidebar from "./Sidebar"; // Import the new Sidebar component
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: Home, role: 'center' },
-  { to: "/register", label: "Register Student", icon: UserPlus, role: 'center' },
-  { to: "/attendance", label: "Take Attendance", icon: CheckSquare, role: 'center' },
-  { to: "/attendance-summary", label: "Attendance Summary", icon: Calendar, role: 'center' },
-  { to: "/lesson-plans", label: "Lesson Plans", icon: LayoutList, role: 'center' },
-  { to: "/lesson-tracking", label: "Lesson Tracking", icon: BookOpen, role: 'center' },
-  { to: "/homework", label: "Homework", icon: Book, role: 'center' },
-  { to: "/activities", label: "Activities", icon: Paintbrush, role: 'center' },
-  { to: "/discipline", label: "Discipline", icon: AlertTriangle, role: 'center' },
-  { to: "/teachers", label: "Teachers", icon: Users, role: 'center' },
-  { to: "/teacher-attendance", label: "Teacher Attendance", icon: UserCheck, role: 'center' },
-  { to: "/tests", label: "Tests", icon: ClipboardCheck, role: 'center' },
-  { to: "/student-report", label: "Student Report", icon: User, role: 'center' },
-  { to: "/ai-insights", label: "AI Insights", icon: Brain, role: 'center' },
-  { to: "/records", label: "View Records", icon: FileText, role: 'center' },
-  { to: "/summary", label: "Summary", icon: BarChart3, role: 'center' },
-  { to: "/finance", label: "Finance", icon: DollarSign, role: 'center' },
-  { to: "/change-password", label: "Change Password", icon: KeyRound, role: 'center' }, // Added Change Password
+  { to: "/register", label: "Register Student", icon: UserPlus, role: 'center', featureName: 'register_student' },
+  { to: "/attendance", label: "Take Attendance", icon: CheckSquare, role: 'center', featureName: 'take_attendance' },
+  { to: "/attendance-summary", label: "Attendance Summary", icon: Calendar, role: 'center', featureName: 'attendance_summary' },
+  { to: "/lesson-plans", label: "Lesson Plans", icon: LayoutList, role: 'center', featureName: 'lesson_plans' },
+  { to: "/lesson-tracking", label: "Lesson Tracking", icon: BookOpen, role: 'center', featureName: 'lesson_tracking' },
+  { to: "/homework", label: "Homework", icon: Book, role: 'center', featureName: 'homework' },
+  { to: "/activities", label: "Activities", icon: Paintbrush, role: 'center', featureName: 'activities' },
+  { to: "/discipline", label: "Discipline", icon: AlertTriangle, role: 'center', featureName: 'discipline' },
+  { to: "/teachers", label: "Teachers", icon: Users, role: 'center', featureName: 'teachers' },
+  { to: "/teacher-attendance", label: "Teacher Attendance", icon: UserCheck, role: 'center', featureName: 'teacher_attendance' },
+  { to: "/tests", label: "Tests", icon: ClipboardCheck, role: 'center', featureName: 'tests' },
+  { to: "/student-report", label: "Student Report", icon: User, role: 'center', featureName: 'student_report' },
+  { to: "/ai-insights", label: "AI Insights", icon: Brain, role: 'center', featureName: 'ai_insights' },
+  { to: "/records", label: "View Records", icon: FileText, role: 'center', featureName: 'view_records' },
+  { to: "/summary", label: "Summary", icon: BarChart3, role: 'center', featureName: 'summary' },
+  { to: "/finance", label: "Finance", icon: DollarSign, role: 'center', featureName: 'finance' },
+  { to: "/change-password", label: "Change Password", icon: KeyRound, role: 'center' },
 ];
 
 export default function CenterLayout({ children }: { children: React.ReactNode }) {
@@ -68,7 +68,6 @@ export default function CenterLayout({ children }: { children: React.ReactNode }
     <div className="flex min-h-screen bg-background">
       <Sidebar
         navItems={navItems}
-        currentRole={user?.role || 'center'}
         headerContent={headerContent}
         footerContent={footerContent}
       />

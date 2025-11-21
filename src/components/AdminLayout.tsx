@@ -9,7 +9,7 @@ const navItems = [
   { to: "/admin-dashboard", label: "Dashboard", icon: Home, role: 'admin' },
   { to: "/admin/finance", label: "Finance", icon: DollarSign, role: 'admin' },
   { to: "/admin/settings", label: "Settings", icon: Settings, role: 'admin' },
-  { to: "/change-password", label: "Change Password", icon: KeyRound, role: 'admin' }, // Added Change Password
+  { to: "/change-password", label: "Change Password", icon: KeyRound, role: 'admin' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -45,7 +45,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="flex min-h-screen bg-background">
       <Sidebar
         navItems={navItems}
-        currentRole={user?.role || 'admin'}
         headerContent={headerContent}
         footerContent={footerContent}
       />

@@ -9,10 +9,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Plus, Edit, Trash2, Check, X, UserPlus } from 'lucide-react';
+import { Plus, Edit, Trash2, Check, X, UserPlus, Settings } from 'lucide-react';
 import { format } from 'date-fns';
 import { Tables } from '@/integrations/supabase/types';
 import * as bcrypt from 'bcryptjs';
+import TeacherFeaturePermissions from '@/components/center/TeacherFeaturePermissions'; // Import the new component
 
 type Teacher = Tables<'teachers'>;
 
@@ -31,6 +32,10 @@ export default function TeacherManagement() {
   const [selectedTeacherForLogin, setSelectedTeacherForLogin] = useState<Teacher | null>(null);
   const [teacherUsername, setTeacherUsername] = useState("");
   const [teacherPassword, setTeacherPassword] = useState("");
+
+  const [showPermissionsDialog, setShowPermissionsDialog] = useState(false);
+  const [selectedTeacherForPermissions, setSelectedTeacherForPermissions] = useState<Teacher | null>(null);
+
 
   // Fetch teachers
   const { data: teachers = [], isLoading } = useQuery({
@@ -59,15 +64,31 @@ export default function TeacherManagement() {
   const createTeacherMutation = useMutation({
     mutationFn: async () => {
       if (!user?.center_id) throw new Error("Center ID not found");
-      const { error } = await supabase.from("teachers").insert({
+      const { error, data: newTeacher } = await supabase.from("teachers").insert({
         center_id: user.center_id,
         name,
         contact_number: contactNumber || null,
         email: email || null,
         hire_date: hireDate,
         is_active: true,
-      });
+      }).select().single();
       if (error) throw error;
+
+      // Seed initial default permissions for the new teacher
+      const defaultTeacherFeatures = [
+        'take_attendance', 'lesson_tracking', 'homework_management',
+        'preschool_activities', 'discipline_issues', 'test_management',
+        'student_report_access'
+      ];
+      const permissionsToInsert = defaultTeacherFeatures.map(feature => ({
+        teacher_id: newTeacher.id,
+        feature_name: feature,
+        is_enabled: true,
+      }));
+      const { error: permError } = await supabase.from('teacher_feature_permissions').insert(permissionsToInsert);
+      if (permError) console.error('Error seeding default permissions for new teacher:', permError);
+
+      return newTeacher;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["teachers"] });
@@ -197,6 +218,11 @@ export default function TeacherManagement() {
     setIsCreatingTeacherLogin(true);
   };
 
+  const handleManagePermissionsClick = (teacher: Teacher) => {
+    setSelectedTeacherForPermissions(teacher);
+    setShowPermissionsDialog(true);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -306,6 +332,11 @@ export default function TeacherManagement() {
                         <Button variant="destructive" size="sm" onClick={() => deleteTeacherMutation.mutate(teacher.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
+                        {teacher.users && teacher.users.length > 0 && (
+                          <Button variant="ghost" size="sm" onClick={() => handleManagePermissionsClick(teacher)}>
+                            <Settings className="h-4 w-4" />
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -357,6 +388,21 @@ export default function TeacherManagement() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage Teacher Permissions Dialog */}
+      <Dialog open={showPermissionsDialog} onOpenChange={setShowPermissionsDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Manage Teacher Permissions</DialogTitle>
+          </DialogHeader>
+          {selectedTeacherForPermissions && (
+            <TeacherFeaturePermissions
+              teacherId={selectedTeacherForPermissions.id}
+              teacherName={selectedTeacherForPermissions.name}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </div>
