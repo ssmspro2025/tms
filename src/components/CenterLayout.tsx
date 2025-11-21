@@ -18,7 +18,7 @@ const navItems = [
   { to: "/finance", label: "Finance", icon: DollarSign },
 ];
 
-export default function Layout({ children }: { children: React.ReactNode }) {
+export default function CenterLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
