@@ -29,6 +29,15 @@ import InitAdmin from "./pages/InitAdmin";
 import NotFound from "./pages/NotFound";
 import Settings from "./pages/admin/Settings";
 
+// New pages
+import Activities from "./pages/Activities";
+import ActivityTypes from "./pages/ActivityTypes";
+import Discipline from "./pages/Discipline";
+import DisciplineCategories from "./pages/DisciplineCategories";
+import Homework from "./pages/Homework";
+import LessonPlans from "./pages/LessonPlans";
+import StudentLessonRecords from "./pages/StudentLessonRecords";
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -61,13 +70,22 @@ const App = () => (
             <Route path="/records" element={<ProtectedRoute role="center"><CenterLayout><ViewRecords /></CenterLayout></ProtectedRoute>} />
             <Route path="/summary" element={<ProtectedRoute role="center"><CenterLayout><Summary /></CenterLayout></ProtectedRoute>} />
             <Route path="/finance" element={<ProtectedRoute role="center"><CenterLayout><AdminFinance /></CenterLayout></ProtectedRoute>} />
+            
+            {/* New Center Routes */}
+            <Route path="/activities" element={<ProtectedRoute role="center"><CenterLayout><Activities /></CenterLayout></ProtectedRoute>} />
+            <Route path="/activity-types" element={<ProtectedRoute role="center"><CenterLayout><ActivityTypes /></CenterLayout></ProtectedRoute>} />
+            <Route path="/discipline" element={<ProtectedRoute role="center"><CenterLayout><Discipline /></CenterLayout></ProtectedRoute>} />
+            <Route path="/discipline-categories" element={<ProtectedRoute role="center"><CenterLayout><DisciplineCategories /></CenterLayout></ProtectedRoute>} />
+            <Route path="/homework" element={<ProtectedRoute role="center"><CenterLayout><Homework /></CenterLayout></ProtectedRoute>} />
+            <Route path="/lesson-plans" element={<ProtectedRoute role="center"><CenterLayout><LessonPlans /></CenterLayout></ProtectedRoute>} />
+            <Route path="/student-lesson-records" element={<ProtectedRoute role="center"><CenterLayout><StudentLessonRecords /></CenterLayout></ProtectedRoute>} />
 
             {/* Admin Routes */}
             <Route path="/admin-dashboard" element={<ProtectedRoute role="admin"><AdminLayout><AdminDashboard /></AdminLayout></ProtectedRoute>} />
             <Route path="/admin/finance" element={<ProtectedRoute role="admin"><AdminLayout><AdminFinance /></AdminLayout></ProtectedRoute>} />
             <Route path="/admin/settings" element={<ProtectedRoute role="admin"><AdminLayout><Settings /></AdminLayout></ProtectedRoute>} />
 
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            {/* Catch-all route should be LAST */}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
