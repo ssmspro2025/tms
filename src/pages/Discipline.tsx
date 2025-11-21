@@ -11,8 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Plus, Edit, Trash2, Eye } from "lucide-react";
+import { Plus, Edit, Trash2, Eye, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
+import { Switch } from "@/components/ui/switch";
 
 const Discipline = () => {
   const { user } = useAuth();
@@ -26,7 +27,10 @@ const Discipline = () => {
     description: "",
     severity: "minor",
     incident_location: "",
-    witnesses: ""
+    witnesses: "",
+    action_taken: "",
+    action_date: format(new Date(), "yyyy-MM-dd"),
+    resolved: false
   });
 
   // Fetch students
@@ -81,7 +85,9 @@ const Discipline = () => {
         .insert({
           ...issueForm,
           center_id: user?.center_id,
-          reported_by: user?.id
+          reported_by: user?.id,
+          action_date: issueForm.action_date || null,
+          resolved: issueForm.resolved || false
         });
       if (error) throw error;
     },
@@ -95,6 +101,29 @@ const Discipline = () => {
     }
   });
 
+  // Update discipline issue mutation
+  const updateIssueMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from("discipline_issues")
+        .update({
+          ...issueForm,
+          action_date: issueForm.action_date || null,
+          resolved: issueForm.resolved || false
+        })
+        .eq("id", viewingIssue.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Discipline issue updated successfully");
+      queryClient.invalidateQueries({ queryKey: ["discipline-issues"] });
+      setViewingIssue(null);
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to update discipline issue");
+    }
+  });
+
   const resetForm = () => {
     setIssueForm({
       student_id: "",
@@ -103,13 +132,20 @@ const Discipline = () => {
       description: "",
       severity: "minor",
       incident_location: "",
-      witnesses: ""
+      witnesses: "",
+      action_taken: "",
+      action_date: format(new Date(), "yyyy-MM-dd"),
+      resolved: false
     });
     setIsDialogOpen(false);
   };
 
   const handleSubmit = () => {
     createIssueMutation.mutate();
+  };
+
+  const handleUpdate = () => {
+    updateIssueMutation.mutate();
   };
 
   const getSeverityColor = (severity: string) => {
@@ -120,6 +156,10 @@ const Discipline = () => {
       case "severe": return "bg-red-100 text-red-800";
       default: return "bg-gray-100 text-gray-800";
     }
+  };
+
+  const getStatusColor = (resolved: boolean) => {
+    return resolved ? "text-green-600" : "text-red-600";
   };
 
   return (
@@ -257,6 +297,7 @@ const Discipline = () => {
                   <TableHead>Category</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Severity</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Reported By</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
@@ -270,6 +311,11 @@ const Discipline = () => {
                     <TableCell>
                       <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getSeverityColor(issue.severity)}`}>
                         {issue.severity}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span className={`font-semibold ${getStatusColor(issue.resolved)}`}>
+                        {issue.resolved ? "Resolved" : "Open"}
                       </span>
                     </TableCell>
                     <TableCell>{issue.users?.username || "-"}</TableCell>
@@ -319,6 +365,16 @@ const Discipline = () => {
                     </span>
                   </p>
                 </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Status</p>
+                  <p className={`font-semibold ${getStatusColor(viewingIssue.resolved)}`}>
+                    {viewingIssue.resolved ? "Resolved" : "Open"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Reported By</p>
+                  <p className="font-medium">{viewingIssue.users?.username || "-"}</p>
+                </div>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Description</p>
@@ -336,9 +392,47 @@ const Discipline = () => {
                   <p className="mt-1">{viewingIssue.witnesses}</p>
                 </div>
               )}
-              <div>
-                <p className="text-sm text-muted-foreground">Reported By</p>
-                <p className="mt-1">{viewingIssue.users?.username || "-"}</p>
+              
+              {/* Action Taken Section */}
+              <div className="border-t pt-4">
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  Action Taken
+                </h3>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="action_taken">Action Taken</Label>
+                      <Textarea
+                        id="action_taken"
+                        value={viewingIssue.action_taken || ""}
+                        onChange={(e) => setViewingIssue({ ...viewingIssue, action_taken: e.target.value })}
+                        placeholder="Describe the action taken..."
+                        rows={3}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="action_date">Action Date</Label>
+                      <Input
+                        id="action_date"
+                        type="date"
+                        value={viewingIssue.action_date || ""}
+                        onChange={(e) => setViewingIssue({ ...viewingIssue, action_date: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="resolved">Mark as Resolved</Label>
+                    <Switch
+                      id="resolved"
+                      checked={viewingIssue.resolved || false}
+                      onCheckedChange={(checked) => setViewingIssue({ ...viewingIssue, resolved: checked })}
+                    />
+                  </div>
+                  <Button onClick={handleUpdate} className="w-full">
+                    Update Issue
+                  </Button>
+                </div>
               </div>
             </div>
           )}

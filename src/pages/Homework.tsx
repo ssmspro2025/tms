@@ -11,13 +11,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Plus, Upload, Download, Eye } from "lucide-react";
+import { Plus, Upload, Download, CheckCircle, Clock, XCircle, Edit, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 
 const Homework = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingHomework, setEditingHomework] = useState<any>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [homeworkForm, setHomeworkForm] = useState({
     subject: "",
@@ -34,13 +35,55 @@ const Homework = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("homework")
-        .select("*")
+        .select("*, student_homework_records(id, student_id, status, submission_date, teacher_remarks)")
         .eq("center_id", user?.center_id!)
         .order("assignment_date", { ascending: false });
       if (error) throw error;
       return data;
     },
     enabled: !!user?.center_id
+  });
+
+  // Fetch students
+  const { data: students = [] } = useQuery({
+    queryKey: ["students", user?.center_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("students")
+        .select("*")
+        .eq("center_id", user?.center_id!);
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.center_id
+  });
+
+  // Fetch subjects
+  const { data: subjects = [] } = useQuery({
+    queryKey: ["subjects", user?.center_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("homework")
+        .select("subject")
+        .eq("center_id", user?.center_id!)
+        .order("subject");
+      if (error) throw error;
+      
+      // Get unique subjects
+      const uniqueSubjects = Array.from(new Set(data.map((item: any) => item.subject)));
+      return uniqueSubjects;
+    },
+    enabled: !!user?.center_id
+  });
+
+  // Fetch grades
+  const { data: grades = [] } = useQuery({
+    queryKey: ["grades", user?.center_id],
+    queryFn: async () => {
+      const uniqueGrades = Array.from(new Set(students.map((s: any) => s.grade)));
+      return uniqueGrades;
+    },
+    enabled: !!user?.center_id && students.length > 0
   });
 
   // Create homework mutation
@@ -82,6 +125,24 @@ const Homework = () => {
         if (updateError) throw updateError;
       }
 
+      // Create student homework records for all students in the grade
+      if (homeworkForm.grade) {
+        const gradeStudents = students.filter((s: any) => s.grade === homeworkForm.grade);
+        const studentRecords = gradeStudents.map((student: any) => ({
+          homework_id: homeworkData.id,
+          student_id: student.id,
+          status: "assigned"
+        }));
+
+        if (studentRecords.length > 0) {
+          const { error: recordsError } = await supabase
+            .from("student_homework_records")
+            .insert(studentRecords);
+          
+          if (recordsError) throw recordsError;
+        }
+      }
+
       return homeworkData;
     },
     onSuccess: () => {
@@ -91,6 +152,85 @@ const Homework = () => {
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to create homework");
+    }
+  });
+
+  // Update homework mutation
+  const updateHomeworkMutation = useMutation({
+    mutationFn: async () => {
+      const updateData: any = {
+        ...homeworkForm
+      };
+
+      // Upload new file if selected
+      if (selectedFile) {
+        const fileExt = selectedFile.name.split(".").pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from("homework-files")
+          .upload(fileName, selectedFile);
+
+        if (uploadError) throw uploadError;
+
+        updateData.attachment_url = fileName;
+        updateData.attachment_name = selectedFile.name;
+      }
+
+      const { error } = await supabase
+        .from("homework")
+        .update(updateData)
+        .eq("id", editingHomework.id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Homework updated successfully");
+      queryClient.invalidateQueries({ queryKey: ["homework"] });
+      resetForm();
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to update homework");
+    }
+  });
+
+  // Delete homework mutation
+  const deleteHomeworkMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("homework")
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Homework deleted successfully");
+      queryClient.invalidateQueries({ queryKey: ["homework"] });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to delete homework");
+    }
+  });
+
+  // Update student homework status
+  const updateStudentHomeworkMutation = useMutation({
+    mutationFn: async ({ recordId, status, remarks }: { recordId: string; status: string; remarks?: string }) => {
+      const { error } = await supabase
+        .from("student_homework_records")
+        .update({
+          status,
+          teacher_remarks: remarks,
+          submission_date: status === "completed" ? new Date().toISOString() : null
+        })
+        .eq("id", recordId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Homework status updated");
+      queryClient.invalidateQueries({ queryKey: ["homework"] });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to update homework status");
     }
   });
 
@@ -104,17 +244,36 @@ const Homework = () => {
       due_date: format(new Date(), "yyyy-MM-dd")
     });
     setSelectedFile(null);
+    setEditingHomework(null);
     setIsDialogOpen(false);
   };
 
   const handleSubmit = () => {
-    createHomeworkMutation.mutate();
+    if (editingHomework) {
+      updateHomeworkMutation.mutate();
+    } else {
+      createHomeworkMutation.mutate();
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setSelectedFile(e.target.files[0]);
     }
+  };
+
+  const handleEdit = (hw: any) => {
+    setEditingHomework(hw);
+    setHomeworkForm({
+      subject: hw.subject,
+      title: hw.title,
+      description: hw.description || "",
+      grade: hw.grade || "",
+      assignment_date: hw.assignment_date,
+      due_date: hw.due_date
+    });
+    setSelectedFile(null);
+    setIsDialogOpen(true);
   };
 
   const downloadAttachment = async (fileName: string, displayName: string) => {
@@ -138,6 +297,26 @@ const Homework = () => {
     }
   };
 
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "assigned": return <Clock className="h-4 w-4 text-blue-500" />;
+      case "submitted": return <Clock className="h-4 w-4 text-yellow-500" />;
+      case "checked": return <CheckCircle className="h-4 w-4 text-purple-500" />;
+      case "completed": return <CheckCircle className="h-4 w-4 text-green-500" />;
+      default: return <Clock className="h-4 w-4 text-gray-500" />;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "assigned": return "text-blue-600";
+      case "submitted": return "text-yellow-600";
+      case "checked": return "text-purple-600";
+      case "completed": return "text-green-600";
+      default: return "text-gray-600";
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -151,27 +330,56 @@ const Homework = () => {
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Assign New Homework</DialogTitle>
+              <DialogTitle>
+                {editingHomework ? "Edit Homework" : "Assign New Homework"}
+              </DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="subject">Subject *</Label>
-                  <Input
-                    id="subject"
+                  <Select
                     value={homeworkForm.subject}
-                    onChange={(e) => setHomeworkForm({ ...homeworkForm, subject: e.target.value })}
-                    placeholder="e.g., Mathematics"
-                  />
+                    onValueChange={(value) => setHomeworkForm({ ...homeworkForm, subject: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select subject" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {subjects.map((subject: string) => (
+                        <SelectItem key={subject} value={subject}>
+                          {subject}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="__new__">+ Add New Subject</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {homeworkForm.subject === "__new__" && (
+                    <Input
+                      placeholder="Enter new subject"
+                      value={homeworkForm.subject === "__new__" ? "" : homeworkForm.subject}
+                      onChange={(e) => setHomeworkForm({ ...homeworkForm, subject: e.target.value })}
+                    />
+                  )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="grade">Grade *</Label>
-                  <Input
-                    id="grade"
-                    value={homeworkForm.grade}
-                    onChange={(e) => setHomeworkForm({ ...homeworkForm, grade: e.target.value })}
-                    placeholder="e.g., Grade 5"
-                  />
+                  <Label htmlFor="grade">Grade</Label>
+                  <Select
+                    value={homeworkForm.grade || ""}
+                    onValueChange={(value) => setHomeworkForm({ ...homeworkForm, grade: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select grade" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">All Grades</SelectItem>
+                      {grades.map((grade: string) => (
+                        <SelectItem key={grade} value={grade}>
+                          {grade}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="space-y-2">
@@ -225,9 +433,14 @@ const Homework = () => {
                     Selected: {selectedFile.name}
                   </p>
                 )}
+                {editingHomework && editingHomework.attachment_url && !selectedFile && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Current file: {editingHomework.attachment_name}
+                  </p>
+                )}
               </div>
               <Button onClick={handleSubmit} className="w-full">
-                Assign Homework
+                {editingHomework ? "Update Homework" : "Assign Homework"}
               </Button>
             </div>
           </DialogContent>
@@ -251,7 +464,8 @@ const Homework = () => {
                   <TableHead>Assigned</TableHead>
                   <TableHead>Due Date</TableHead>
                   <TableHead>Attachment</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Students</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -259,7 +473,7 @@ const Homework = () => {
                   <TableRow key={hw.id}>
                     <TableCell className="font-medium">{hw.title}</TableCell>
                     <TableCell>{hw.subject}</TableCell>
-                    <TableCell>{hw.grade}</TableCell>
+                    <TableCell>{hw.grade || "All Grades"}</TableCell>
                     <TableCell>{format(new Date(hw.assignment_date), "PPP")}</TableCell>
                     <TableCell>{format(new Date(hw.due_date), "PPP")}</TableCell>
                     <TableCell>
@@ -276,7 +490,32 @@ const Homework = () => {
                       )}
                     </TableCell>
                     <TableCell>
-                      <span className="capitalize">{hw.status || "assigned"}</span>
+                      {hw.student_homework_records?.length > 0 ? (
+                        <span>
+                          {hw.student_homework_records.filter((r: any) => r.status === "completed").length}/
+                          {hw.student_homework_records.length} completed
+                        </span>
+                      ) : (
+                        "0/0"
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEdit(hw)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteHomeworkMutation.mutate(hw.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -285,6 +524,94 @@ const Homework = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Student Homework Tracking */}
+      {homework.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Student Homework Tracking</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              {homework.map((hw: any) => (
+                <div key={hw.id} className="border rounded-lg p-4">
+                  <h3 className="font-semibold text-lg mb-3">{hw.title}</h3>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Student</TableHead>
+                          <TableHead>Grade</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Submission Date</TableHead>
+                          <TableHead>Teacher Remarks</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {hw.student_homework_records && hw.student_homework_records.length > 0 ? (
+                          hw.student_homework_records.map((record: any) => {
+                            const student = students.find((s: any) => s.id === record.student_id);
+                            return (
+                              <TableRow key={record.id}>
+                                <TableCell className="font-medium">
+                                  {student ? student.name : "Unknown Student"}
+                                </TableCell>
+                                <TableCell>{student ? student.grade : "-"}</TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    {getStatusIcon(record.status)}
+                                    <span className={getStatusColor(record.status)}>
+                                      {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
+                                    </span>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  {record.submission_date 
+                                    ? format(new Date(record.submission_date), "PPP") 
+                                    : "-"}
+                                </TableCell>
+                                <TableCell>{record.teacher_remarks || "-"}</TableCell>
+                                <TableCell>
+                                  <Select
+                                    value={record.status}
+                                    onValueChange={(value) => 
+                                      updateStudentHomeworkMutation.mutate({
+                                        recordId: record.id,
+                                        status: value
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger className="w-[120px]">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="assigned">Assigned</SelectItem>
+                                      <SelectItem value="submitted">Submitted</SelectItem>
+                                      <SelectItem value="checked">Checked</SelectItem>
+                                      <SelectItem value="completed">Completed</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center text-muted-foreground">
+                              No students assigned to this homework
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };

@@ -11,13 +11,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Plus, Upload, Download } from "lucide-react";
+import { Plus, Upload, Download, Eye, Edit, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 
 const LessonPlans = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingLesson, setEditingLesson] = useState<any>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [lessonForm, setLessonForm] = useState({
     subject: "",
@@ -40,6 +41,42 @@ const LessonPlans = () => {
         .order("lesson_date", { ascending: false });
       if (error) throw error;
       return data;
+    },
+    enabled: !!user?.center_id
+  });
+
+  // Fetch subjects for dropdown
+  const { data: subjects = [] } = useQuery({
+    queryKey: ["subjects", user?.center_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("lesson_plans")
+        .select("subject")
+        .eq("center_id", user?.center_id!)
+        .order("subject");
+      if (error) throw error;
+      
+      // Get unique subjects
+      const uniqueSubjects = Array.from(new Set(data.map((item: any) => item.subject)));
+      return uniqueSubjects;
+    },
+    enabled: !!user?.center_id
+  });
+
+  // Fetch grades for dropdown
+  const { data: grades = [] } = useQuery({
+    queryKey: ["grades", user?.center_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("students")
+        .select("grade")
+        .eq("center_id", user?.center_id!)
+        .order("grade");
+      if (error) throw error;
+      
+      // Get unique grades
+      const uniqueGrades = Array.from(new Set(data.map((item: any) => item.grade)));
+      return uniqueGrades;
     },
     enabled: !!user?.center_id
   });
@@ -97,6 +134,65 @@ const LessonPlans = () => {
     }
   });
 
+  // Update lesson plan mutation
+  const updateLessonMutation = useMutation({
+    mutationFn: async () => {
+      const updateData: any = {
+        ...lessonForm
+      };
+
+      // Upload new file if selected
+      if (selectedFile) {
+        const fileExt = selectedFile.name.split(".").pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const fileSize = selectedFile.size;
+        
+        const { error: uploadError } = await supabase.storage
+          .from("lesson-plan-files")
+          .upload(fileName, selectedFile);
+
+        if (uploadError) throw uploadError;
+
+        updateData.lesson_file_url = fileName;
+        updateData.file_name = selectedFile.name;
+        updateData.file_size = fileSize;
+      }
+
+      const { error } = await supabase
+        .from("lesson_plans")
+        .update(updateData)
+        .eq("id", editingLesson.id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Lesson plan updated successfully");
+      queryClient.invalidateQueries({ queryKey: ["lesson-plans"] });
+      resetForm();
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to update lesson plan");
+    }
+  });
+
+  // Delete lesson plan mutation
+  const deleteLessonMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("lesson_plans")
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Lesson plan deleted successfully");
+      queryClient.invalidateQueries({ queryKey: ["lesson-plans"] });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to delete lesson plan");
+    }
+  });
+
   const resetForm = () => {
     setLessonForm({
       subject: "",
@@ -108,17 +204,37 @@ const LessonPlans = () => {
       notes: ""
     });
     setSelectedFile(null);
+    setEditingLesson(null);
     setIsDialogOpen(false);
   };
 
   const handleSubmit = () => {
-    createLessonMutation.mutate();
+    if (editingLesson) {
+      updateLessonMutation.mutate();
+    } else {
+      createLessonMutation.mutate();
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setSelectedFile(e.target.files[0]);
     }
+  };
+
+  const handleEdit = (lesson: any) => {
+    setEditingLesson(lesson);
+    setLessonForm({
+      subject: lesson.subject,
+      chapter: lesson.chapter,
+      topic: lesson.topic,
+      grade: lesson.grade || "",
+      lesson_date: lesson.lesson_date,
+      description: lesson.description || "",
+      notes: lesson.notes || ""
+    });
+    setSelectedFile(null);
+    setIsDialogOpen(true);
   };
 
   const downloadLessonFile = async (fileName: string, displayName: string) => {
@@ -155,27 +271,63 @@ const LessonPlans = () => {
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Create New Lesson Plan</DialogTitle>
+              <DialogTitle>
+                {editingLesson ? "Edit Lesson Plan" : "Create New Lesson Plan"}
+              </DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="subject">Subject *</Label>
-                  <Input
-                    id="subject"
+                  <Select
                     value={lessonForm.subject}
-                    onChange={(e) => setLessonForm({ ...lessonForm, subject: e.target.value })}
-                    placeholder="e.g., Mathematics"
-                  />
+                    onValueChange={(value) => setLessonForm({ ...lessonForm, subject: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select subject" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {subjects.map((subject: string) => (
+                        <SelectItem key={subject} value={subject}>
+                          {subject}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="__new__">+ Add New Subject</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {lessonForm.subject === "__new__" && (
+                    <Input
+                      placeholder="Enter new subject"
+                      value={lessonForm.subject === "__new__" ? "" : lessonForm.subject}
+                      onChange={(e) => setLessonForm({ ...lessonForm, subject: e.target.value })}
+                    />
+                  )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="grade">Grade *</Label>
-                  <Input
-                    id="grade"
-                    value={lessonForm.grade}
-                    onChange={(e) => setLessonForm({ ...lessonForm, grade: e.target.value })}
-                    placeholder="e.g., Grade 5"
-                  />
+                  <Label htmlFor="grade">Grade</Label>
+                  <Select
+                    value={lessonForm.grade || ""}
+                    onValueChange={(value) => setLessonForm({ ...lessonForm, grade: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select grade" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {grades.map((grade: string) => (
+                        <SelectItem key={grade} value={grade}>
+                          {grade}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="__new__">+ Add New Grade</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {lessonForm.grade === "__new__" && (
+                    <Input
+                      placeholder="Enter new grade"
+                      value={lessonForm.grade === "__new__" ? "" : lessonForm.grade}
+                      onChange={(e) => setLessonForm({ ...lessonForm, grade: e.target.value })}
+                    />
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -239,9 +391,14 @@ const LessonPlans = () => {
                     Selected: {selectedFile.name}
                   </p>
                 )}
+                {editingLesson && editingLesson.lesson_file_url && !selectedFile && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Current file: {editingLesson.file_name}
+                  </p>
+                )}
               </div>
               <Button onClick={handleSubmit} className="w-full">
-                Create Lesson Plan
+                {editingLesson ? "Update Lesson Plan" : "Create Lesson Plan"}
               </Button>
             </div>
           </DialogContent>
@@ -265,7 +422,7 @@ const LessonPlans = () => {
                   <TableHead>Grade</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>File</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -274,7 +431,7 @@ const LessonPlans = () => {
                     <TableCell className="font-medium">{lesson.subject}</TableCell>
                     <TableCell>{lesson.chapter}</TableCell>
                     <TableCell>{lesson.topic}</TableCell>
-                    <TableCell>{lesson.grade}</TableCell>
+                    <TableCell>{lesson.grade || "-"}</TableCell>
                     <TableCell>{format(new Date(lesson.lesson_date), "PPP")}</TableCell>
                     <TableCell>
                       {lesson.lesson_file_url ? (
@@ -290,11 +447,22 @@ const LessonPlans = () => {
                       )}
                     </TableCell>
                     <TableCell>
-                      {lesson.is_active ? (
-                        <span className="text-green-600">Active</span>
-                      ) : (
-                        <span className="text-red-600">Inactive</span>
-                      )}
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEdit(lesson)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteLessonMutation.mutate(lesson.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

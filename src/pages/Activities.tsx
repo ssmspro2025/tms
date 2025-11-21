@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Plus, Edit, Trash2, Upload } from "lucide-react";
+import { Plus, Edit, Trash2, Upload, Image, Video, Star } from "lucide-react";
 import { format } from "date-fns";
 
 const Activities = () => {
@@ -19,6 +19,7 @@ const Activities = () => {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<any>(null);
+  const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
   const [activityForm, setActivityForm] = useState({
     activity_type_id: "",
     title: "",
@@ -60,18 +61,88 @@ const Activities = () => {
     enabled: !!user?.center_id
   });
 
+  // Fetch students for activity tracking
+  const { data: students = [] } = useQuery({
+    queryKey: ["students", user?.center_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("students")
+        .select("*")
+        .eq("center_id", user?.center_id!);
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.center_id
+  });
+
+  // Fetch student activity records
+  const { data: studentActivityRecords = [] } = useQuery({
+    queryKey: ["student-activity-records", user?.center_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("student_activity_records")
+        .select("*, activities(title), students(name)");
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.center_id
+  });
+
   // Create activity mutation
   const createActivityMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase
+      // First create activity record
+      const { data: activityData, error: activityError } = await supabase
         .from("activities")
         .insert({
           ...activityForm,
           center_id: user?.center_id,
           created_by: user?.id,
           duration_minutes: activityForm.duration_minutes ? parseInt(activityForm.duration_minutes) : null
-        });
-      if (error) throw error;
+        })
+        .select()
+        .single();
+
+      if (activityError) throw activityError;
+
+      // Upload files if selected
+      if (selectedFiles && selectedFiles.length > 0) {
+        const uploadPromises = [];
+        for (let i = 0; i < selectedFiles.length; i++) {
+          const file = selectedFiles[i];
+          const fileExt = file.name.split(".").pop();
+          const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}-${i}.${fileExt}`;
+          
+          const uploadPromise = supabase.storage
+            .from("activity-media")
+            .upload(fileName, file);
+          
+          uploadPromises.push(uploadPromise);
+        }
+
+        const uploadResults = await Promise.all(uploadPromises);
+        const mediaUrls = uploadResults.map(result => result.data?.path || "");
+        
+        // Create student activity records for all students in the grade
+        if (activityForm.grade) {
+          const gradeStudents = students.filter((s: any) => s.grade === activityForm.grade);
+          const studentRecords = gradeStudents.map((student: any) => ({
+            activity_id: activityData.id,
+            student_id: student.id,
+            media_urls: mediaUrls
+          }));
+
+          if (studentRecords.length > 0) {
+            const { error: recordsError } = await supabase
+              .from("student_activity_records")
+              .insert(studentRecords);
+            
+            if (recordsError) throw recordsError;
+          }
+        }
+      }
+
+      return activityData;
     },
     onSuccess: () => {
       toast.success("Activity created successfully");
@@ -123,6 +194,27 @@ const Activities = () => {
     }
   });
 
+  // Update student activity rating
+  const updateStudentRatingMutation = useMutation({
+    mutationFn: async ({ recordId, rating, notes }: { recordId: string; rating: number; notes?: string }) => {
+      const { error } = await supabase
+        .from("student_activity_records")
+        .update({
+          involvement_rating: rating,
+          teacher_notes: notes
+        })
+        .eq("id", recordId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Rating updated successfully");
+      queryClient.invalidateQueries({ queryKey: ["student-activity-records"] });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to update rating");
+    }
+  });
+
   const resetForm = () => {
     setActivityForm({
       activity_type_id: "",
@@ -133,6 +225,7 @@ const Activities = () => {
       grade: "",
       notes: ""
     });
+    setSelectedFiles(null);
     setEditingActivity(null);
     setIsDialogOpen(false);
   };
@@ -156,7 +249,61 @@ const Activities = () => {
       grade: activity.grade || "",
       notes: activity.notes || ""
     });
+    setSelectedFiles(null);
     setIsDialogOpen(true);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setSelectedFiles(e.target.files);
+    }
+  };
+
+  const renderMedia = (mediaUrls: string[]) => {
+    if (!mediaUrls || mediaUrls.length === 0) return null;
+    
+    return (
+      <div className="flex flex-wrap gap-2">
+        {mediaUrls.map((url, index) => {
+          const isImage = /\.(jpg|jpeg|png|gif)$/i.test(url);
+          const isVideo = /\.(mp4|webm|ogg)$/i.test(url);
+          
+          return (
+            <div key={index} className="relative">
+              {isImage ? (
+                <img 
+                  src={supabase.storage.from("activity-media").getPublicUrl(url).data.publicUrl} 
+                  alt="Activity media" 
+                  className="w-16 h-16 object-cover rounded"
+                />
+              ) : isVideo ? (
+                <video 
+                  src={supabase.storage.from("activity-media").getPublicUrl(url).data.publicUrl} 
+                  className="w-16 h-16 object-cover rounded"
+                />
+              ) : (
+                <div className="w-16 h-16 bg-muted rounded flex items-center justify-center">
+                  <Upload className="h-6 w-6 text-muted-foreground" />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderRating = (rating: number) => {
+    return (
+      <div className="flex">
+        {[1, 2, 3, 4, 5].map((star) => (
+          <Star
+            key={star}
+            className={`h-4 w-4 ${star <= rating ? "text-yellow-400 fill-current" : "text-gray-300"}`}
+          />
+        ))}
+      </div>
+    );
   };
 
   return (
@@ -256,6 +403,21 @@ const Activities = () => {
                   rows={2}
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="media">Media (Photos/Videos)</Label>
+                <Input
+                  id="media"
+                  type="file"
+                  multiple
+                  accept="image/*,video/*"
+                  onChange={handleFileChange}
+                />
+                {selectedFiles && selectedFiles.length > 0 && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Selected: {selectedFiles.length} file(s)
+                  </p>
+                )}
+              </div>
               <Button onClick={handleSubmit} className="w-full">
                 {editingActivity ? "Update Activity" : "Create Activity"}
               </Button>
@@ -320,6 +482,166 @@ const Activities = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Student Activity Records */}
+      {activities.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Student Activity Records</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              {activities.map((activity: any) => {
+                const activityRecords = studentActivityRecords.filter(
+                  (record: any) => record.activity_id === activity.id
+                );
+                
+                if (activityRecords.length === 0) return null;
+                
+                return (
+                  <div key={activity.id} className="border rounded-lg p-4">
+                    <h3 className="font-semibold text-lg mb-3">{activity.title}</h3>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Student</TableHead>
+                            <TableHead>Grade</TableHead>
+                            <TableHead>Rating</TableHead>
+                            <TableHead>Notes</TableHead>
+                            <TableHead>Media</TableHead>
+                            <TableHead>Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {activityRecords.map((record: any) => {
+                            const student = students.find((s: any) => s.id === record.student_id);
+                            return (
+                              <TableRow key={record.id}>
+                                <TableCell className="font-medium">
+                                  {student ? student.name : "Unknown Student"}
+                                </TableCell>
+                                <TableCell>{student ? student.grade : "-"}</TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    {renderRating(record.involvement_rating || 0)}
+                                    <span className="text-sm">
+                                      {record.involvement_rating || 0}/5
+                                    </span>
+                                  </div>
+                                </TableCell>
+                                <TableCell>{record.teacher_notes || "-"}</TableCell>
+                                <TableCell>
+                                  {record.media_urls && record.media_urls.length > 0 ? (
+                                    <div className="flex gap-1">
+                                      {record.media_urls.slice(0, 3).map((url: string, index: number) => {
+                                        const isImage = /\.(jpg|jpeg|png|gif)$/i.test(url);
+                                        const isVideo = /\.(mp4|webm|ogg)$/i.test(url);
+                                        return (
+                                          <div key={index} className="relative">
+                                            {isImage ? (
+                                              <img 
+                                                src={supabase.storage.from("activity-media").getPublicUrl(url).data.publicUrl} 
+                                                alt="Activity" 
+                                                className="w-8 h-8 object-cover rounded"
+                                              />
+                                            ) : isVideo ? (
+                                              <Video className="h-8 w-8 text-muted-foreground" />
+                                            ) : (
+                                              <Upload className="h-8 w-8 text-muted-foreground" />
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                      {record.media_urls.length > 3 && (
+                                        <span className="text-xs text-muted-foreground">
+                                          +{record.media_urls.length - 3} more
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    "-"
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <Dialog>
+                                    <DialogTrigger asChild>
+                                      <Button variant="outline" size="sm">
+                                        Rate
+                                      </Button>
+                                    </DialogTrigger>
+                                    <DialogContent>
+                                      <DialogHeader>
+                                        <DialogTitle>Rate Student Activity</DialogTitle>
+                                      </DialogHeader>
+                                      <div className="space-y-4 py-4">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-medium">
+                                            {student ? student.name : "Unknown Student"}
+                                          </span>
+                                          <span className="text-muted-foreground">
+                                            - {activity.title}
+                                          </span>
+                                        </div>
+                                        <div className="space-y-2">
+                                          <Label>Rating (1-5 stars)</Label>
+                                          <div className="flex gap-1">
+                                            {[1, 2, 3, 4, 5].map((star) => (
+                                              <Button
+                                                key={star}
+                                                variant="outline"
+                                                size="icon"
+                                                onClick={() => 
+                                                  updateStudentRatingMutation.mutate({
+                                                    recordId: record.id,
+                                                    rating: star,
+                                                    notes: record.teacher_notes
+                                                  })
+                                                }
+                                              >
+                                                <Star
+                                                  className={`h-5 w-5 ${
+                                                    star <= (record.involvement_rating || 0)
+                                                      ? "text-yellow-400 fill-current"
+                                                      : "text-gray-300"
+                                                  }`}
+                                                />
+                                              </Button>
+                                            ))}
+                                          </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                          <Label>Notes</Label>
+                                          <Textarea
+                                            value={record.teacher_notes || ""}
+                                            onChange={(e) => 
+                                              updateStudentRatingMutation.mutate({
+                                                recordId: record.id,
+                                                rating: record.involvement_rating || 0,
+                                                notes: e.target.value
+                                              })
+                                            }
+                                            placeholder="Add notes about student's performance..."
+                                            rows={3}
+                                          />
+                                        </div>
+                                      </div>
+                                    </DialogContent>
+                                  </Dialog>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };

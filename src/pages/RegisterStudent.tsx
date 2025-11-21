@@ -31,6 +31,7 @@ import {
   UserPlus,
   Upload,
   Download,
+  Calendar,
 } from "lucide-react";
 import {
   Dialog,
@@ -39,6 +40,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface Student {
   id: string;
@@ -48,6 +56,11 @@ interface Student {
   parent_name: string;
   contact_number: string;
   center_id: string;
+  date_of_birth?: string;
+  email?: string;
+  address?: string;
+  enrollment_date?: string;
+  status?: string;
 }
 
 type StudentInput = {
@@ -56,6 +69,9 @@ type StudentInput = {
   school_name: string;
   parent_name: string;
   contact_number: string;
+  date_of_birth?: string;
+  email?: string;
+  address?: string;
   center_id?: string | null;
 };
 
@@ -69,6 +85,9 @@ export default function RegisterStudent() {
     school_name: "",
     parent_name: "",
     contact_number: "",
+    date_of_birth: "",
+    email: "",
+    address: "",
   });
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -104,25 +123,77 @@ export default function RegisterStudent() {
     },
   });
 
+  // Fetch fee structures for grade assignment
+  const { data: feeStructures = [] } = useQuery({
+    queryKey: ["fee-structures", user?.center_id],
+    queryFn: async () => {
+      if (!user?.center_id) return [];
+      const { data, error } = await supabase
+        .from("fee_structures")
+        .select("*, fee_headings(heading_name)")
+        .eq("center_id", user.center_id)
+        .eq("is_active", true);
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.center_id,
+  });
+
   // Single student create
   const createMutation = useMutation({
     mutationFn: async (student: typeof formData) => {
-      const { error } = await supabase.from("students").insert([
-        {
-          ...student,
-          center_id: user?.center_id,
-        },
-      ]);
-      if (error) throw error;
+      const { data: studentData, error: studentError } = await supabase
+        .from("students")
+        .insert([
+          {
+            ...student,
+            center_id: user?.center_id,
+            enrollment_date: new Date().toISOString(),
+            status: "active",
+          },
+        ])
+        .select()
+        .single();
+
+      if (studentError) throw studentError;
+
+      // Auto-assign fee structure based on grade
+      const gradeStructures = feeStructures.filter(
+        (fs: any) => fs.grade === student.grade
+      );
+
+      if (gradeStructures.length > 0) {
+        const assignments = gradeStructures.map((fs: any) => ({
+          student_id: studentData.id,
+          fee_heading_id: fs.fee_heading_id,
+          fee_structure_id: fs.id,
+          amount: fs.amount,
+          academic_year: new Date().getFullYear().toString(),
+          is_active: true,
+          assigned_date: new Date().toISOString(),
+        }));
+
+        const { error: assignmentError } = await supabase
+          .from("student_fee_assignments")
+          .insert(assignments);
+
+        if (assignmentError) throw assignmentError;
+      }
+
+      return studentData;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["students", user?.center_id] });
+      queryClient.invalidateQueries({ queryKey: ["fee-structures", user?.center_id] });
       setFormData({
         name: "",
         grade: "",
         school_name: "",
         parent_name: "",
         contact_number: "",
+        date_of_birth: "",
+        email: "",
+        address: "",
       });
       toast.success("Student registered successfully!");
     },
@@ -142,6 +213,9 @@ export default function RegisterStudent() {
           school_name: student.school_name,
           parent_name: student.parent_name,
           contact_number: student.contact_number,
+          date_of_birth: student.date_of_birth,
+          email: student.email,
+          address: student.address,
         })
         .eq("id", student.id);
       if (error) throw error;
@@ -189,7 +263,7 @@ export default function RegisterStudent() {
           role: "parent",
           student_id: selectedStudentForParent.id,
           center_id: user?.center_id,
-          is_active: true
+          is_active: true,
         })
         .select()
         .single();
@@ -217,6 +291,8 @@ export default function RegisterStudent() {
       const rowsWithCenter = rows.map((r) => ({
         ...r,
         center_id: user?.center_id || null,
+        enrollment_date: new Date().toISOString(),
+        status: "active",
       }));
       const { error } = await supabase.from("students").insert(rowsWithCenter);
       if (error) throw error;
@@ -283,6 +359,9 @@ export default function RegisterStudent() {
       "school_name",
       "parent_name",
       "contact_number",
+      "date_of_birth",
+      "email",
+      "address",
     ];
     const matchesHeader = expectedFields.every((f) => header.includes(f));
     if (matchesHeader) {
@@ -307,23 +386,38 @@ export default function RegisterStudent() {
           school_name: (rowObj["school_name"] || rowObj["school"] || "").trim(),
           parent_name: (rowObj["parent_name"] || rowObj["parent"] || "").trim(),
           contact_number: (rowObj["contact_number"] || rowObj["contact"] || "").trim(),
+          date_of_birth: (rowObj["date_of_birth"] || "").trim(),
+          email: (rowObj["email"] || "").trim(),
+          address: (rowObj["address"] || "").trim(),
         };
       } else {
-        const [name = "", grade = "", school_name = "", parent_name = "", contact_number = ""] =
-          cols;
+        const [
+          name = "",
+          grade = "",
+          school_name = "",
+          parent_name = "",
+          contact_number = "",
+          date_of_birth = "",
+          email = "",
+          address = "",
+        ] = cols;
         student = {
           name: name.trim(),
           grade: grade.trim(),
           school_name: school_name.trim(),
           parent_name: parent_name.trim(),
           contact_number: contact_number.trim(),
+          date_of_birth: date_of_birth.trim(),
+          email: email.trim(),
+          address: address.trim(),
         };
       }
       const rowNumber = i + 1;
       const rowErrors: string[] = [];
       if (!student.name) rowErrors.push(`Row ${rowNumber}: name required`);
       if (!student.grade) rowErrors.push(`Row ${rowNumber}: grade required`);
-      if (!student.contact_number) rowErrors.push(`Row ${rowNumber}: contact required`);
+      if (!student.contact_number)
+        rowErrors.push(`Row ${rowNumber}: contact required`);
       if (rowErrors.length) errors.push(...rowErrors);
       else output.push(student);
     }
@@ -380,8 +474,26 @@ export default function RegisterStudent() {
   };
 
   const downloadTemplate = () => {
-    const header = ["name", "grade", "school_name", "parent_name", "contact_number"];
-    const example = ["John Doe", "6", "ABC School", "Robert Doe", "9812345678"];
+    const header = [
+      "name",
+      "grade",
+      "school_name",
+      "parent_name",
+      "contact_number",
+      "date_of_birth",
+      "email",
+      "address",
+    ];
+    const example = [
+      "John Doe",
+      "6",
+      "ABC School",
+      "Robert Doe",
+      "9812345678",
+      "2010-01-01",
+      "john.doe@example.com",
+      "123 Main St, City",
+    ];
     const csv = [header.join(","), example.join(",")].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -430,14 +542,18 @@ export default function RegisterStudent() {
       {/* Header */}
       <div>
         <h2 className="text-3xl font-bold tracking-tight">Register Student</h2>
-        <p className="text-muted-foreground">Add new students to the attendance system</p>
+        <p className="text-muted-foreground">
+          Add new students to the attendance system
+        </p>
       </div>
 
       {/* Single Student Form */}
       <Card>
         <CardHeader>
           <CardTitle>Student Information</CardTitle>
-          <CardDescription>Fill in the details to register a new student</CardDescription>
+          <CardDescription>
+            Fill in the details to register a new student
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -497,6 +613,39 @@ export default function RegisterStudent() {
                   required
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="date_of_birth">Date of Birth</Label>
+                <Input
+                  id="date_of_birth"
+                  type="date"
+                  value={formData.date_of_birth}
+                  onChange={(e) =>
+                    setFormData({ ...formData, date_of_birth: e.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) =>
+                    setFormData({ ...formData, email: e.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="address">Address</Label>
+                <Textarea
+                  id="address"
+                  value={formData.address}
+                  onChange={(e) =>
+                    setFormData({ ...formData, address: e.target.value })
+                  }
+                  rows={2}
+                />
+              </div>
             </div>
 
             {/* Actions */}
@@ -540,12 +689,15 @@ export default function RegisterStudent() {
 
             {/* Multiline paste */}
             <div id="multiline-area" style={{ display: "none" }} className="mt-4">
-              <Label>Paste rows: name, grade, school_name, parent_name, contact_number</Label>
+              <Label>
+                Paste rows: name, grade, school_name, parent_name, contact_number,
+                date_of_birth, email, address
+              </Label>
               <Textarea
                 value={multilineText}
                 onChange={(e) => setMultilineText(e.target.value)}
                 rows={5}
-                placeholder="John Doe,6,ABC School,Robert Doe,9812345678"
+                placeholder="John Doe,6,ABC School,Robert Doe,9812345678,2010-01-01,john.doe@example.com,123 Main St, City"
               />
               <div className="flex gap-2 mt-2">
                 <Button onClick={handleParseMultiline} disabled={parsing}>
@@ -581,28 +733,36 @@ export default function RegisterStudent() {
             </div>
           )}
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Grade</TableHead>
-                <TableHead>School Name</TableHead>
-                <TableHead>Parent Name</TableHead>
-                <TableHead>Contact</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {csvPreviewRows.map((row, idx) => (
-                <TableRow key={idx}>
-                  <TableCell>{row.name}</TableCell>
-                  <TableCell>{row.grade}</TableCell>
-                  <TableCell>{row.school_name}</TableCell>
-                  <TableCell>{row.parent_name}</TableCell>
-                  <TableCell>{row.contact_number}</TableCell>
+          <div className="max-h-96 overflow-y-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Grade</TableHead>
+                  <TableHead>School Name</TableHead>
+                  <TableHead>Parent Name</TableHead>
+                  <TableHead>Contact</TableHead>
+                  <TableHead>DOB</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Address</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {csvPreviewRows.map((row, idx) => (
+                  <TableRow key={idx}>
+                    <TableCell>{row.name}</TableCell>
+                    <TableCell>{row.grade}</TableCell>
+                    <TableCell>{row.school_name}</TableCell>
+                    <TableCell>{row.parent_name}</TableCell>
+                    <TableCell>{row.contact_number}</TableCell>
+                    <TableCell>{row.date_of_birth}</TableCell>
+                    <TableCell>{row.email}</TableCell>
+                    <TableCell>{row.address}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
 
           <div className="flex justify-end gap-2 mt-4">
             <Button
@@ -630,13 +790,15 @@ export default function RegisterStudent() {
                 <TableHead>School</TableHead>
                 <TableHead>Parent</TableHead>
                 <TableHead>Contact</TableHead>
+                <TableHead>DOB</TableHead>
+                <TableHead>Email</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center">
+                  <TableCell colSpan={8} className="text-center">
                     Loading...
                   </TableCell>
                 </TableRow>
@@ -713,6 +875,36 @@ export default function RegisterStudent() {
                         student.contact_number
                       )}
                     </TableCell>
+                    <TableCell>
+                      {editingId === student.id ? (
+                        <Input
+                          type="date"
+                          value={editData?.date_of_birth || ""}
+                          onChange={(e) =>
+                            setEditData((prev) =>
+                              prev ? { ...prev, date_of_birth: e.target.value } : null
+                            )
+                          }
+                        />
+                      ) : (
+                        student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : "-"
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {editingId === student.id ? (
+                        <Input
+                          type="email"
+                          value={editData?.email || ""}
+                          onChange={(e) =>
+                            setEditData((prev) =>
+                              prev ? { ...prev, email: e.target.value } : null
+                            )
+                          }
+                        />
+                      ) : (
+                        student.email || "-"
+                      )}
+                    </TableCell>
                     <TableCell className="flex gap-2">
                       {editingId === student.id ? (
                         <>
@@ -749,7 +941,7 @@ export default function RegisterStudent() {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center">
+                  <TableCell colSpan={8} className="text-center">
                     No students registered yet
                   </TableCell>
                 </TableRow>
