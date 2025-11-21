@@ -3,10 +3,10 @@ import { useAuth } from '@/contexts/AuthContext';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  adminOnly?: boolean;
+  role?: 'admin' | 'center' | 'parent';
 }
 
-const ProtectedRoute = ({ children, adminOnly = false }: ProtectedRouteProps) => {
+const ProtectedRoute = ({ children, role }: ProtectedRouteProps) => {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -18,11 +18,17 @@ const ProtectedRoute = ({ children, adminOnly = false }: ProtectedRouteProps) =>
   }
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    let loginPath = '/login';
+    if (role === 'admin') loginPath = '/login-admin';
+    if (role === 'parent') loginPath = '/login-parent';
+    return <Navigate to={loginPath} replace />;
   }
 
-  if (adminOnly && user.role !== 'admin') {
-    return <Navigate to="/" replace />;
+  if (role && user.role !== role) {
+    let dashboardPath = '/';
+    if (user.role === 'admin') dashboardPath = '/admin-dashboard';
+    if (user.role === 'parent') dashboardPath = '/parent-dashboard';
+    return <Navigate to={dashboardPath} replace />;
   }
 
   return <>{children}</>;

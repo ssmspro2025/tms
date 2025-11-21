@@ -5,7 +5,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
-import Layout from "./components/Layout";
+import CenterLayout from "./components/CenterLayout";
+import AdminLayout from "./components/AdminLayout";
+import ParentLayout from "./components/ParentLayout";
 import Dashboard from "./pages/Dashboard";
 import RegisterStudent from "./pages/RegisterStudent";
 import TakeAttendance from "./pages/TakeAttendance";
@@ -25,6 +27,7 @@ import ParentDashboard from "./pages/ParentDashboard";
 import ParentFinanceDashboard from "./pages/ParentFinanceDashboard";
 import InitAdmin from "./pages/InitAdmin";
 import NotFound from "./pages/NotFound";
+import Settings from "./pages/admin/Settings";
 import FinanceDashboard from "./pages/FinanceDashboard";
 import TeacherLessonPlans from "./pages/TeacherLessonPlans";
 import TeacherHomework from "./pages/TeacherHomework";
@@ -41,10 +44,34 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <Routes>
+            {/* Authentication Routes */}
             <Route path="/init-admin" element={<InitAdmin />} />
             <Route path="/login" element={<Login />} />
             <Route path="/login-admin" element={<AdminLogin />} />
             <Route path="/login-parent" element={<ParentLogin />} />
+
+            {/* Parent Routes */}
+            <Route path="/parent-dashboard" element={<ProtectedRoute role="parent"><ParentLayout><ParentDashboard /></ParentLayout></ProtectedRoute>} />
+            <Route path="/parent-finance" element={<ProtectedRoute role="parent"><ParentLayout><ParentFinanceDashboard /></ParentLayout></ProtectedRoute>} />
+
+            {/* Center Routes */}
+            <Route path="/" element={<ProtectedRoute role="center"><CenterLayout><Dashboard /></CenterLayout></ProtectedRoute>} />
+            <Route path="/register" element={<ProtectedRoute role="center"><CenterLayout><RegisterStudent /></CenterLayout></ProtectedRoute>} />
+            <Route path="/attendance" element={<ProtectedRoute role="center"><CenterLayout><TakeAttendance /></CenterLayout></ProtectedRoute>} />
+            <Route path="/attendance-summary" element={<ProtectedRoute role="center"><CenterLayout><AttendanceSummary /></CenterLayout></ProtectedRoute>} />
+            <Route path="/chapters" element={<ProtectedRoute role="center"><CenterLayout><ChaptersTracking /></CenterLayout></ProtectedRoute>} />
+            <Route path="/tests" element={<ProtectedRoute role="center"><CenterLayout><Tests /></CenterLayout></ProtectedRoute>} />
+            <Route path="/student-report" element={<ProtectedRoute role="center"><CenterLayout><StudentReport /></CenterLayout></ProtectedRoute>} />
+            <Route path="/ai-insights" element={<ProtectedRoute role="center"><CenterLayout><AIInsights /></CenterLayout></ProtectedRoute>} />
+            <Route path="/records" element={<ProtectedRoute role="center"><CenterLayout><ViewRecords /></CenterLayout></ProtectedRoute>} />
+            <Route path="/summary" element={<ProtectedRoute role="center"><CenterLayout><Summary /></CenterLayout></ProtectedRoute>} />
+            <Route path="/finance" element={<ProtectedRoute role="center"><CenterLayout><AdminFinance /></CenterLayout></ProtectedRoute>} />
+
+            {/* Admin Routes */}
+            <Route path="/admin-dashboard" element={<ProtectedRoute role="admin"><AdminLayout><AdminDashboard /></AdminLayout></ProtectedRoute>} />
+            <Route path="/admin/finance" element={<ProtectedRoute role="admin"><AdminLayout><AdminFinance /></AdminLayout></ProtectedRoute>} />
+            <Route path="/admin/settings" element={<ProtectedRoute role="admin"><AdminLayout><Settings /></AdminLayout></ProtectedRoute>} />
+
             <Route path="/parent-dashboard" element={<ProtectedRoute><ParentDashboard /></ProtectedRoute>} />
             <Route path="/parent-finance" element={<ProtectedRoute><ParentFinanceDashboard /></ProtectedRoute>} />
             <Route path="/" element={<ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>} />
