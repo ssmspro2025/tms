@@ -423,6 +423,8 @@ export type Database = {
           role: Database["public"]["Enums"]["app_role"]
           student_id: string | null
           username: string
+          updated_at: string | null;
+          teacher_id: string | null;
         }
         Insert: {
           center_id?: string | null
@@ -434,6 +436,8 @@ export type Database = {
           role?: Database["public"]["Enums"]["app_role"]
           student_id?: string | null
           username: string
+          updated_at?: string | null;
+          teacher_id?: string | null;
         }
         Update: {
           center_id?: string | null
@@ -445,6 +449,8 @@ export type Database = {
           role?: Database["public"]["Enums"]["app_role"]
           student_id?: string | null
           username?: string
+          updated_at?: string | null;
+          teacher_id?: string | null;
         }
         Relationships: [
           {
@@ -461,9 +467,16 @@ export type Database = {
             referencedRelation: "students"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "users_teacher_id_fkey"
+            columns: ["teacher_id"]
+            isOneToOne: false
+            referencedRelation: "teachers"
+            referencedColumns: ["id"]
+          },
         ]
       }
-      // New tables for ERP expansion
+      -- New tables for ERP expansion
       lesson_plans: {
         Row: {
           id: string;
@@ -714,7 +727,7 @@ export type Database = {
           }
         ];
       };
-      teachers: { // NEW TABLE
+      teachers: {
         Row: {
           id: string;
           center_id: string;
@@ -758,7 +771,7 @@ export type Database = {
           }
         ];
       };
-      teacher_attendance: { // NEW TABLE
+      teacher_attendance: {
         Row: {
           id: string;
           teacher_id: string;
@@ -802,6 +815,76 @@ export type Database = {
           }
         ];
       };
+      center_feature_permissions: {
+        Row: {
+          id: string;
+          center_id: string;
+          feature_name: string;
+          is_enabled: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          center_id: string;
+          feature_name: string;
+          is_enabled?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          center_id?: string;
+          feature_name?: string;
+          is_enabled?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "center_feature_permissions_center_id_fkey";
+            columns: ["center_id"];
+            isOneToOne: false;
+            referencedRelation: "centers";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      teacher_feature_permissions: {
+        Row: {
+          id: string;
+          teacher_id: string;
+          feature_name: string;
+          is_enabled: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          teacher_id: string;
+          feature_name: string;
+          is_enabled?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          teacher_id?: string;
+          feature_name?: string;
+          is_enabled?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "teacher_feature_permissions_teacher_id_fkey";
+            columns: ["teacher_id"];
+            isOneToOne: false;
+            referencedRelation: "teachers";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
     }
     Views: {
       [_ in never]: never
@@ -810,7 +893,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      app_role: "admin" | "center" | "parent"
+      app_role: "admin" | "center" | "parent" | "teacher"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -938,7 +1021,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "center", "parent"],
+      app_role: ["admin", "center", "parent", "teacher"],
     },
   },
 } as const
