@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, Shield, Power, PowerOff, Edit } from 'lucide-react';
+import * as bcrypt from 'bcryptjs';
 
 const AdminDashboard = () => {
   const { user } = useAuth();
@@ -55,13 +56,38 @@ const AdminDashboard = () => {
   // Create center mutation
   const createCenterMutation = useMutation({
     mutationFn: async () => {
-      const { data: functionData, error: functionError } = await supabase.functions.invoke('admin-create-center', {
-        body: newCenter
-      });
+      // Hash password
+      const hashedPassword = await bcrypt.hash(newCenter.password, 12);
 
-      if (functionError) throw functionError;
-      if (!functionData.success) throw new Error(functionData.error);
-      return functionData;
+      // Create center
+      const { data: centerData, error: centerError } = await supabase
+        .from('centers')
+        .insert({
+          center_name: newCenter.centerName,
+          address: newCenter.address || null,
+          contact_number: newCenter.contactNumber || null
+        })
+        .select()
+        .single();
+
+      if (centerError) throw centerError;
+
+      // Create user for the center
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .insert({
+          username: newCenter.username,
+          password_hash: hashedPassword,
+          role: 'center',
+          center_id: centerData.id,
+          is_active: true
+        })
+        .select()
+        .single();
+
+      if (userError) throw userError;
+
+      return { success: true, center: centerData, user: userData };
     },
     onSuccess: () => {
       toast({

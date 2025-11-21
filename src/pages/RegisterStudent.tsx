@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import * as bcrypt from "bcryptjs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -176,21 +177,26 @@ export default function RegisterStudent() {
     mutationFn: async () => {
       if (!selectedStudentForParent) return;
 
-      const { data, error } = await supabase.functions.invoke(
-        "create-parent-account",
-        {
-          body: {
-            username: parentUsername,
-            password: parentPassword,
-            studentId: selectedStudentForParent.id,
-            centerId: user?.center_id,
-          },
-        }
-      );
+      // Hash password
+      const hashedPassword = await bcrypt.hash(parentPassword, 12);
 
-      if (error) throw error;
-      if (!data.success) throw new Error(data.error);
-      return data;
+      // Create user account for parent
+      const { data: userData, error: userError } = await supabase
+        .from("users")
+        .insert({
+          username: parentUsername,
+          password_hash: hashedPassword,
+          role: "parent",
+          student_id: selectedStudentForParent.id,
+          center_id: user?.center_id,
+          is_active: true
+        })
+        .select()
+        .single();
+
+      if (userError) throw userError;
+
+      return { success: true, user: userData };
     },
     onSuccess: () => {
       toast.success("Parent account created successfully");

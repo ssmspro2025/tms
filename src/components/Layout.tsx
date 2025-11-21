@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Home, UserPlus, CheckSquare, FileText, BarChart3, BookOpen, ClipboardCheck, User, Brain, LogOut, Shield, Calendar } from "lucide-react";
+import { Home, UserPlus, CheckSquare, FileText, BarChart3, BookOpen, ClipboardCheck, User, Brain, LogOut, Shield, Calendar, DollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ const navItems = [
   { to: "/ai-insights", label: "AI Insights", icon: Brain },
   { to: "/records", label: "View Records", icon: FileText },
   { to: "/summary", label: "Summary", icon: BarChart3 },
+  { to: "/finance", label: "Finance", icon: DollarSign },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
