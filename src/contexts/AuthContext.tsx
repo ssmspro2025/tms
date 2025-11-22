@@ -10,12 +10,12 @@ interface User {
   last_name: string;
   role: Tables<'users'>['role'];
   tenant_id: string;
-  school_id: string | null;
-  school_name?: string; // From joined schools table
-  student_id?: string | null; // From joined students table
-  student_name?: string; // From joined students table
-  teacher_id?: string | null; // From joined teachers table
-  teacher_name?: string; // From joined teachers table
+  center_id: string | null; // Changed from school_id
+  center_name?: string; // Changed from school_name
+  student_id?: string | null;
+  student_name?: string;
+  teacher_id?: string | null;
+  teacher_name?: string;
   centerPermissions?: Record<string, boolean>; // For center users
   teacherPermissions?: Record<string, boolean>; // For teacher users
 }
@@ -41,11 +41,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const parsedUser: User = JSON.parse(storedUser);
         setUser(parsedUser);
         // Optionally re-fetch permissions to ensure they are up-to-date
-        if (parsedUser.role === 'school_admin' && parsedUser.school_id) {
+        if (parsedUser.role === 'center' && parsedUser.center_id) { // Changed from school_admin and school_id
           const { data: permissions, error } = await supabase
-            .from('center_feature_permissions') // Renamed from center to school
+            .from('center_feature_permissions')
             .select('feature_name, is_enabled')
-            .eq('center_id', parsedUser.school_id); // Renamed from center_id to school_id
+            .eq('center_id', parsedUser.center_id); // Changed from school_id
           if (!error && permissions) {
             const perms = permissions.reduce((acc, p) => ({ ...acc, [p.feature_name]: p.is_enabled }), {});
             setUser(prev => prev ? { ...prev, centerPermissions: perms } : null);
@@ -88,15 +88,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const userData = data.user;
 
-      // Fetch permissions if user is a school_admin (formerly center) or teacher
+      // Fetch permissions if user is a center or teacher
       let centerPermissions: Record<string, boolean> | undefined;
       let teacherPermissions: Record<string, boolean> | undefined;
 
-      if (userData.role === 'school_admin' && userData.school_id) {
+      if (userData.role === 'center' && userData.center_id) { // Changed from school_admin and school_id
         const { data: permissions, error } = await supabase
-          .from('center_feature_permissions') // Renamed from center to school
+          .from('center_feature_permissions')
           .select('feature_name, is_enabled')
-          .eq('center_id', userData.school_id); // Renamed from center_id to school_id
+          .eq('center_id', userData.center_id); // Changed from school_id
         if (error) console.error('Error fetching center permissions:', error);
         centerPermissions = permissions?.reduce((acc, p) => ({ ...acc, [p.feature_name]: p.is_enabled }), {});
       } else if (userData.role === 'teacher' && userData.teacher_id) {
@@ -115,8 +115,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         last_name: userData.last_name,
         role: userData.role,
         tenant_id: userData.tenant_id,
-        school_id: userData.school_id,
-        school_name: userData.school_name,
+        center_id: userData.center_id, // Changed from school_id
+        center_name: userData.center_name, // Changed from school_name
         student_id: userData.student_id,
         student_name: userData.student_name,
         teacher_id: userData.teacher_id,
