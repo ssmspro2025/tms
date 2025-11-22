@@ -102,6 +102,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // Verify password
+      console.log('Generated hash:', passwordHash);
+      console.log('Stored hash:', user.password_hash);
       if (user.password_hash !== passwordHash) {
         console.error('Password mismatch for user:', email);
         return { success: false, error: 'Invalid credentials' };
