@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import * as bcrypt from "bcryptjs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -175,28 +174,23 @@ export default function RegisterStudent() {
   // Create parent account
   const createParentMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedStudentForParent) return;
+      if (!selectedStudentForParent || !user?.center_id) {
+        throw new Error("Student or Center ID not found.");
+      }
 
-      // Hash password
-      const hashedPassword = await bcrypt.hash(parentPassword, 12);
-
-      // Create user account for parent
-      const { data: userData, error: userError } = await supabase
-        .from("users")
-        .insert({
+      const { data, error } = await supabase.functions.invoke('create-parent-account', {
+        body: {
           username: parentUsername,
-          password_hash: hashedPassword,
-          role: "parent",
-          student_id: selectedStudentForParent.id,
-          center_id: user?.center_id,
-          is_active: true
-        })
-        .select()
-        .single();
+          password: parentPassword,
+          studentId: selectedStudentForParent.id,
+          centerId: user.center_id,
+        },
+      });
 
-      if (userError) throw userError;
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error || 'Failed to create parent account via Edge Function');
 
-      return { success: true, user: userData };
+      return data;
     },
     onSuccess: () => {
       toast.success("Parent account created successfully");
