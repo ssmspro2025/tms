@@ -72,55 +72,80 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     expectedRole?: Tables<'users'>['role']
   ) => {
     try {
-      // Call the auth-login Edge Function
-      const { data, error: invokeError } = await supabase.functions.invoke('auth-login', {
-        body: { username: email, password, role: expectedRole },
-      });
+      // Hash password using SHA-256 (same method as backend)
+      const hashPassword = async (pwd: string): Promise<string> => {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(pwd);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      };
 
-      if (invokeError) {
-        console.error('Edge Function invocation error:', invokeError);
-        return { success: false, error: invokeError.message };
+      const passwordHash = await hashPassword(password);
+
+      // Query user from database
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('*, centers(center_name), students(name), teachers(name)')
+        .eq('username', email)
+        .eq('is_active', true)
+        .single();
+
+      if (userError || !user) {
+        console.error('User not found:', userError);
+        return { success: false, error: 'Invalid credentials' };
       }
 
-      if (!data.success) {
-        return { success: false, error: data.error || 'Login failed' };
+      // Check role if expected
+      if (expectedRole && user.role !== expectedRole) {
+        return { success: false, error: 'Access denied. Incorrect role.' };
       }
 
-      const userData = data.user;
+      // Verify password
+      if (user.password_hash !== passwordHash) {
+        console.error('Password mismatch for user:', email);
+        return { success: false, error: 'Invalid credentials' };
+      }
+
+      // Update last login
+      await supabase
+        .from('users')
+        .update({ last_login: new Date().toISOString() })
+        .eq('id', user.id);
 
       // Fetch permissions if user is a center or teacher
       let centerPermissions: Record<string, boolean> | undefined;
       let teacherPermissions: Record<string, boolean> | undefined;
 
-      if (userData.role === 'center' && userData.center_id) { // Changed from school_admin and school_id
+      if (user.role === 'center' && user.center_id) {
         const { data: permissions, error } = await supabase
           .from('center_feature_permissions')
           .select('feature_name, is_enabled')
-          .eq('center_id', userData.center_id); // Changed from school_id
+          .eq('center_id', user.center_id);
         if (error) console.error('Error fetching center permissions:', error);
         centerPermissions = permissions?.reduce((acc, p) => ({ ...acc, [p.feature_name]: p.is_enabled }), {});
-      } else if (userData.role === 'teacher' && userData.teacher_id) {
+      } else if (user.role === 'teacher' && user.teacher_id) {
         const { data: permissions, error } = await supabase
           .from('teacher_feature_permissions')
           .select('feature_name, is_enabled')
-          .eq('teacher_id', userData.teacher_id);
+          .eq('teacher_id', user.teacher_id);
         if (error) console.error('Error fetching teacher permissions:', error);
         teacherPermissions = permissions?.reduce((acc, p) => ({ ...acc, [p.feature_name]: p.is_enabled }), {});
       }
 
       const currentUser: User = {
-        id: userData.id,
-        email: userData.email,
-        first_name: userData.first_name,
-        last_name: userData.last_name,
-        role: userData.role,
-        tenant_id: userData.tenant_id,
-        center_id: userData.center_id, // Changed from school_id
-        center_name: userData.center_name, // Changed from school_name
-        student_id: userData.student_id,
-        student_name: userData.student_name,
-        teacher_id: userData.teacher_id,
-        teacher_name: userData.teacher_name,
+        id: user.id,
+        email: user.username,
+        first_name: user.username,
+        last_name: '',
+        role: user.role,
+        tenant_id: user.id,
+        center_id: user.center_id,
+        center_name: user.centers?.center_name || undefined,
+        student_id: user.student_id,
+        student_name: user.students?.name || undefined,
+        teacher_id: user.teacher_id,
+        teacher_name: user.teachers?.name || undefined,
         centerPermissions,
         teacherPermissions,
       };
