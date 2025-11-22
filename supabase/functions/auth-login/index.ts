@@ -13,7 +13,7 @@ serve(async (req) => {
   }
 
   try {
-    const { username, password, role } = await req.json();
+    const { username, password, role: expectedRole } = await req.json();
 
     if (!username || !password) {
       return new Response(
@@ -26,17 +26,16 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Fetch user by username
+    // Fetch user by username, including related center, student, and teacher data
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('*, centers(center_name), students(name)')
+      .select('*, centers(center_name), students(name), teachers(name)')
       .eq('username', username)
       .eq('is_active', true)
       .single();
 
     if (userError || !user) {
-      console.error('User not found:', userError);
-      console.log('Attempted username:', username);
+      console.error('User not found or inactive:', userError?.message || 'No user data');
       return new Response(
         JSON.stringify({ success: false, error: 'Invalid credentials' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
@@ -44,8 +43,8 @@ serve(async (req) => {
     }
 
     // Role-based access control
-    if (role && user.role !== role) {
-      console.log(`Role mismatch for user: ${username}. Expected ${role}, but got ${user.role}`);
+    if (expectedRole && user.role !== expectedRole) {
+      console.log(`Role mismatch for user: ${username}. Expected ${expectedRole}, but got ${user.role}`);
       return new Response(
         JSON.stringify({ success: false, error: 'Access denied. Incorrect role.' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 403 }
@@ -56,7 +55,6 @@ serve(async (req) => {
 
     // Verify password using bcryptjs
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
-    console.log('Password match result:', passwordMatch);
     
     if (!passwordMatch) {
       console.log('Password verification failed for user:', username);
@@ -72,15 +70,21 @@ serve(async (req) => {
       .update({ last_login: new Date().toISOString() })
       .eq('id', user.id);
 
-    // Return user data (excluding password_hash)
+    // Return comprehensive user data (excluding password_hash)
     const userData = {
       id: user.id,
       username: user.username,
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name,
       role: user.role,
+      tenant_id: user.tenant_id,
       center_id: user.center_id,
       center_name: user.centers?.center_name || null,
       student_id: user.student_id,
-      student_name: user.students?.name || null
+      student_name: user.students?.name || null,
+      teacher_id: user.teacher_id,
+      teacher_name: user.teachers?.name || null,
     };
 
     return new Response(
@@ -88,7 +92,7 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error: any) {
-    console.error('Login error:', error);
+    console.error('Login Edge Function error:', error);
     return new Response(
       JSON.stringify({ success: false, error: error.message }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
