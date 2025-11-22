@@ -1,25 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.80.0';
-
-// Helper function to hash password using Web Crypto API
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// Helper function to verify password
-async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  try {
-    const passwordHash = await hashPassword(password);
-    return passwordHash === hash;
-  } catch (error) {
-    console.error('Password verification error:', error);
-    return false;
-  }
-}
+import * as bcrypt from "bcryptjs"; // Import bcryptjs
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -73,11 +54,8 @@ serve(async (req) => {
 
     console.log('User found:', user.username, 'Role:', user.role);
 
-    // Verify password
-    const passwordHash = await hashPassword(password);
-    console.log('Generated hash:', passwordHash);
-    console.log('Stored hash:', user.password_hash);
-    const passwordMatch = await verifyPassword(password, user.password_hash);
+    // Verify password using bcryptjs
+    const passwordMatch = await bcrypt.compare(password, user.password_hash);
     console.log('Password match result:', passwordMatch);
     
     if (!passwordMatch) {
