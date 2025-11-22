@@ -1,8 +1,10 @@
+"use client";
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Download, FileText, Eye, Loader2, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -98,6 +100,9 @@ export default function QuestionPaperViewer({
               <FileText className="h-5 w-5" />
               {testName}
             </DialogTitle>
+            <DialogDescription>
+              Preview or download the question paper for {testName}.
+            </DialogDescription>
           </DialogHeader>
 
           {isLoading && (

@@ -167,6 +167,9 @@ const FeeManagement = () => {
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Create Fee Heading</DialogTitle>
+                  <DialogDescription>
+                    Define a new category for fees (e.g., Tuition, Transport).
+                  </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">

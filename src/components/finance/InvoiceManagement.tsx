@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { Plus, Eye, MoreHorizontal } from 'lucide-react';
 import { Invoice, InvoiceWithItems } from '@/integrations/supabase/finance-types';
@@ -162,6 +162,9 @@ const InvoiceManagement = () => {
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Generate Monthly Invoices</DialogTitle>
+                  <DialogDescription>
+                    Automatically create invoices for all students with active fee assignments.
+                  </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="grid grid-cols-2 gap-4">
@@ -296,6 +299,9 @@ const InvoiceManagement = () => {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Invoice Details</DialogTitle>
+            <DialogDescription>
+              Detailed view of the selected invoice and its items.
+            </DialogDescription>
           </DialogHeader>
           {selectedInvoice && (
             <div className="space-y-4">

@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { Plus, Check } from 'lucide-react';
 import { Payment, PaymentMethod, Invoice, LedgerEntry, ACCOUNT_CODES, getInvoiceStatus } from '@/integrations/supabase/finance-types';
@@ -214,6 +214,9 @@ const PaymentTracking = () => {
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Record Payment</DialogTitle>
+                  <DialogDescription>
+                    Enter details for a payment received from a student.
+                  </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">

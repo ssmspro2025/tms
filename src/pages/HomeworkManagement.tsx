@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Plus, Edit, Trash2, FileUp, Image, CheckCircle, XCircle } from "lucide-react";
 import { format } from "date-fns";
@@ -265,6 +265,9 @@ export default function HomeworkManagement() {
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingHomework ? "Edit Homework" : "Create New Homework"}</DialogTitle>
+              <DialogDescription>
+                {editingHomework ? "Update the details of this homework assignment." : "Assign new homework to students by filling in the details."}
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
@@ -381,6 +384,9 @@ export default function HomeworkManagement() {
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Manage Status for: {selectedHomeworkForStatus?.title}</DialogTitle>
+            <DialogDescription>
+              Update the submission status and add remarks for each student.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             {studentStatuses.length === 0 ? (

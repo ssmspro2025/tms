@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Invoice, Payment } from '@/integrations/supabase/finance-types';
 import { AlertCircle, Download, Eye, ArrowLeft, CreditCard } from 'lucide-react';
 import { isPast } from 'date-fns';
@@ -323,6 +323,9 @@ const ParentFinanceDashboard = () => {
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Invoice Details</DialogTitle>
+              <DialogDescription>
+                View the full details of this invoice, including line items and payment status.
+              </DialogDescription>
             </DialogHeader>
             {selectedInvoice && (
               <div className="space-y-6">

@@ -8,6 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { Tables } from '@/integrations/supabase/types';
+import { DialogDescription } from '@/components/ui/dialog'; // Import DialogDescription
 
 type Teacher = Tables<'teachers'>;
 type TeacherFeaturePermission = Tables<'teacher_feature_permissions'>;
@@ -81,6 +82,9 @@ export default function TeacherFeaturePermissions({ teacherId, teacherName }: { 
     <Card>
       <CardHeader>
         <CardTitle>Manage Features for {teacherName}</CardTitle>
+        <DialogDescription>
+          Enable or disable specific features for this teacher.
+        </DialogDescription>
       </CardHeader>
       <CardContent>
         <Table>
