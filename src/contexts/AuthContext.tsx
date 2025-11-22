@@ -1,19 +1,23 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import * as bcrypt from 'bcryptjs';
 import { Tables } from '@/integrations/supabase/types';
 
+// Define the User interface based on the new ERP schema
 interface User {
   id: string;
   email: string;
   first_name: string;
   last_name: string;
-  role: Tables<'users'>['role']; // Use the new 'role' enum
+  role: Tables<'users'>['role'];
   tenant_id: string;
   school_id: string | null;
-  school_name?: string;
-  student_id?: string | null; // This will now be derived from the 'students' table
-  teacher_id?: string | null; // This will now be derived from the 'teachers' table
+  school_name?: string; // From joined schools table
+  student_id?: string | null; // From joined students table
+  student_name?: string; // From joined students table
+  teacher_id?: string | null; // From joined teachers table
+  teacher_name?: string; // From joined teachers table
+  centerPermissions?: Record<string, boolean>; // For center users
+  teacherPermissions?: Record<string, boolean>; // For teacher users
 }
 
 interface AuthContextType {
@@ -30,11 +34,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('auth_user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    setLoading(false);
+    const loadUser = async () => {
+      setLoading(true);
+      const storedUser = localStorage.getItem('auth_user');
+      if (storedUser) {
+        const parsedUser: User = JSON.parse(storedUser);
+        setUser(parsedUser);
+        // Optionally re-fetch permissions to ensure they are up-to-date
+        if (parsedUser.role === 'school_admin' && parsedUser.school_id) {
+          const { data: permissions, error } = await supabase
+            .from('center_feature_permissions') // Renamed from center to school
+            .select('feature_name, is_enabled')
+            .eq('center_id', parsedUser.school_id); // Renamed from center_id to school_id
+          if (!error && permissions) {
+            const perms = permissions.reduce((acc, p) => ({ ...acc, [p.feature_name]: p.is_enabled }), {});
+            setUser(prev => prev ? { ...prev, centerPermissions: perms } : null);
+          }
+        } else if (parsedUser.role === 'teacher' && parsedUser.teacher_id) {
+          const { data: permissions, error } = await supabase
+            .from('teacher_feature_permissions')
+            .select('feature_name, is_enabled')
+            .eq('teacher_id', parsedUser.teacher_id);
+          if (!error && permissions) {
+            const perms = permissions.reduce((acc, p) => ({ ...acc, [p.feature_name]: p.is_enabled }), {});
+            setUser(prev => prev ? { ...prev, teacherPermissions: perms } : null);
+          }
+        }
+      }
+      setLoading(false);
+    };
+    loadUser();
   }, []);
 
   const login = async (
@@ -43,90 +72,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     expectedRole?: Tables<'users'>['role']
   ) => {
     try {
-      // Fetch user from the new 'users' table
-      const { data: userDataFromDb, error: userError } = await supabase
-        .from('users')
-        .select('id, email, first_name, last_name, role, tenant_id, school_id, schools(name)')
-        .eq('email', email)
-        .eq('status', 'active') // Use the new 'status' column
-        .single();
+      // Call the auth-login Edge Function
+      const { data, error: invokeError } = await supabase.functions.invoke('auth-login', {
+        body: { username: email, password, role: expectedRole },
+      });
 
-      if (userError || !userDataFromDb) {
-        console.error('User not found:', userError);
-        return { success: false, error: 'Invalid email or password' };
+      if (invokeError) {
+        console.error('Edge Function invocation error:', invokeError);
+        return { success: false, error: invokeError.message };
       }
 
-      if (expectedRole && userDataFromDb.role !== expectedRole) {
-        return { success: false, error: 'Invalid email or password for this role' };
+      if (!data.success) {
+        return { success: false, error: data.error || 'Login failed' };
       }
 
-      // IMPORTANT: The new schema does not have password_hash in public.users.
-      // This means direct password comparison here is no longer possible.
-      // You will need to implement a secure authentication mechanism,
-      // such as Supabase Auth (if auth_user_id is used) or an Edge Function
-      // that verifies the password against a securely stored hash (e.g., in a private schema).
-      // For now, I'm commenting out the bcrypt comparison.
-      // If you are using Supabase's built-in auth, you would use `supabase.auth.signInWithPassword`.
-      // If you are managing passwords in `public.users`, you need a secure way to store/verify them.
-      // For this migration, I'll assume a placeholder for password verification.
-      // You MUST replace this with a secure method.
+      const userData = data.user;
 
-      // Placeholder for password verification (replace with actual secure method)
-      // For demonstration, I'm assuming a simple check or that an external auth system handles it.
-      // In a real ERP, you'd likely use Supabase's built-in auth or a custom secure hash comparison.
-      // const passwordMatch = await bcrypt.compare(password, userDataFromDb.password_hash);
-      // if (!passwordMatch) {
-      //   console.error('Password verification failed for user:', email);
-      //   return { success: false, error: 'Invalid email or password' };
-      // }
+      // Fetch permissions if user is a school_admin (formerly center) or teacher
+      let centerPermissions: Record<string, boolean> | undefined;
+      let teacherPermissions: Record<string, boolean> | undefined;
 
-      // For now, we'll assume password is correct if user is found and role matches.
-      // This is INSECURE and MUST be replaced.
-      const passwordMatch = true; // Placeholder - REPLACE WITH REAL PASSWORD VERIFICATION
-
-      if (!passwordMatch) {
-        return { success: false, error: 'Invalid email or password' };
-      }
-
-      // Update last login
-      await supabase
-        .from('users')
-        .update({ last_login: new Date().toISOString() })
-        .eq('id', userDataFromDb.id);
-
-      // Determine student_id or teacher_id if applicable
-      let student_id: string | null = null;
-      let teacher_id: string | null = null;
-
-      if (userDataFromDb.role === 'student') {
-        const { data: studentData, error: studentDataError } = await supabase
-          .from('students')
-          .select('id')
-          .eq('user_id', userDataFromDb.id)
-          .single();
-        if (studentDataError) console.error('Error fetching student ID:', studentDataError);
-        student_id = studentData?.id || null;
-      } else if (userDataFromDb.role === 'teacher') {
-        const { data: teacherData, error: teacherDataError } = await supabase
-          .from('teachers')
-          .select('id')
-          .eq('user_id', userDataFromDb.id)
-          .single();
-        if (teacherDataError) console.error('Error fetching teacher ID:', teacherDataError);
-        teacher_id = teacherData?.id || null;
+      if (userData.role === 'school_admin' && userData.school_id) {
+        const { data: permissions, error } = await supabase
+          .from('center_feature_permissions') // Renamed from center to school
+          .select('feature_name, is_enabled')
+          .eq('center_id', userData.school_id); // Renamed from center_id to school_id
+        if (error) console.error('Error fetching center permissions:', error);
+        centerPermissions = permissions?.reduce((acc, p) => ({ ...acc, [p.feature_name]: p.is_enabled }), {});
+      } else if (userData.role === 'teacher' && userData.teacher_id) {
+        const { data: permissions, error } = await supabase
+          .from('teacher_feature_permissions')
+          .select('feature_name, is_enabled')
+          .eq('teacher_id', userData.teacher_id);
+        if (error) console.error('Error fetching teacher permissions:', error);
+        teacherPermissions = permissions?.reduce((acc, p) => ({ ...acc, [p.feature_name]: p.is_enabled }), {});
       }
 
       const currentUser: User = {
-        id: userDataFromDb.id,
-        email: userDataFromDb.email,
-        first_name: userDataFromDb.first_name,
-        last_name: userDataFromDb.last_name,
-        role: userDataFromDb.role,
-        tenant_id: userDataFromDb.tenant_id,
-        school_id: userDataFromDb.school_id,
-        school_name: (userDataFromDb.schools as any)?.name || undefined,
-        student_id: student_id,
-        teacher_id: teacher_id,
+        id: userData.id,
+        email: userData.email,
+        first_name: userData.first_name,
+        last_name: userData.last_name,
+        role: userData.role,
+        tenant_id: userData.tenant_id,
+        school_id: userData.school_id,
+        school_name: userData.school_name,
+        student_id: userData.student_id,
+        student_name: userData.student_name,
+        teacher_id: userData.teacher_id,
+        teacher_name: userData.teacher_name,
+        centerPermissions,
+        teacherPermissions,
       };
 
       setUser(currentUser);
@@ -138,7 +134,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await supabase.auth.signOut(); // Use Supabase's built-in sign out
     setUser(null);
     localStorage.removeItem('auth_user');
   };
