@@ -56,34 +56,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     password: string,
     expectedRole?: Tables<'users'>['role']
   ) => {
+    console.log('AuthContext: login function called');
     try {
+      console.log('AuthContext: Attempting to invoke auth-login Edge Function...');
       const { data, error: invokeError } = await supabase.functions.invoke('auth-login', {
         body: { username, password },
       });
+      console.log('AuthContext: Edge Function invocation completed.');
 
       if (invokeError) {
-        console.error('Edge Function invocation error:', invokeError);
+        console.error('AuthContext: Edge Function invocation error:', invokeError);
         return { success: false, error: invokeError.message || 'Login failed' };
       }
 
       if (!data.success) {
-        console.error('Login failed from Edge Function:', data.error);
+        console.error('AuthContext: Login failed from Edge Function:', data.error);
         return { success: false, error: data.error || 'Login failed' };
       }
 
       const loggedInUser: User = data.user;
+      console.log('AuthContext: User logged in successfully:', loggedInUser.username);
 
       // 2. Role-based access control (now done client-side after Edge Function returns user)
       if (expectedRole && loggedInUser.role !== expectedRole) {
-        console.log(`Role mismatch for user: ${username}. Expected ${expectedRole}, but got ${loggedInUser.role}`);
+        console.log(`AuthContext: Role mismatch for user: ${username}. Expected ${expectedRole}, but got ${loggedInUser.role}`);
         return { success: false, error: 'Access denied. Incorrect role.' };
       }
 
       setUser(loggedInUser);
       localStorage.setItem('auth_user', JSON.stringify(loggedInUser));
+      console.log('AuthContext: User state updated and stored in localStorage.');
       return { success: true };
     } catch (error: any) {
-      console.error('Login error:', error);
+      console.error('AuthContext: Login error caught in client-side:', error);
       return { success: false, error: error.message || 'Login failed' };
     }
   };
