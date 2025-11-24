@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Tables } from '@/integrations/supabase/types';
+import * as bcrypt from 'bcryptjs';
 
 // Define the User interface based on the new ERP schema
 interface User {
   id: string;
-  username: string; // Added username
+  username: string;
   email: string;
   first_name: string;
   last_name: string;
@@ -68,61 +69,79 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (
-    username: string, // Changed from email to username
+    username: string,
     password: string,
     expectedRole?: Tables<'users'>['role']
   ) => {
     try {
-      // Call the auth-login Edge Function
-      const { data, error: invokeError } = await supabase.functions.invoke('auth-login', {
-        body: { username, password, role: expectedRole }, // Pass username
-      });
+      // 1. Fetch user by username
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('*, password_hash, centers(center_name), students(name), teachers(name)')
+        .eq('username', username)
+        .eq('is_active', true)
+        .single();
 
-      if (invokeError) {
-        console.error('Edge Function invocation error:', invokeError);
-        return { success: false, error: invokeError.message };
+      if (userError || !user) {
+        console.error('User not found or inactive:', userError?.message || 'No user data');
+        return { success: false, error: 'Invalid credentials' };
       }
 
-      if (!data.success) {
-        return { success: false, error: data.error || 'Login failed' };
+      // 2. Role-based access control
+      if (expectedRole && user.role !== expectedRole) {
+        console.log(`Role mismatch for user: ${username}. Expected ${expectedRole}, but got ${user.role}`);
+        return { success: false, error: 'Access denied. Incorrect role.' };
       }
 
-      const userData = data.user;
+      // 3. Verify password using bcryptjs
+      const passwordMatch = await bcrypt.compare(password, user.password_hash);
+      
+      if (!passwordMatch) {
+        console.log('Password verification failed for user:', username);
+        return { success: false, error: 'Invalid credentials' };
+      }
 
-      // Fetch permissions if user is a center or teacher
+      // 4. Update last login
+      await supabase
+        .from('users')
+        .update({ last_login: new Date().toISOString() })
+        .eq('id', user.id);
+
+      // 5. Fetch permissions if user is a center or teacher
       let centerPermissions: Record<string, boolean> | undefined;
       let teacherPermissions: Record<string, boolean> | undefined;
 
-      if (userData.role === 'center' && userData.center_id) {
+      if (user.role === 'center' && user.center_id) {
         const { data: permissions, error } = await supabase
           .from('center_feature_permissions')
           .select('feature_name, is_enabled')
-          .eq('center_id', userData.center_id);
+          .eq('center_id', user.center_id);
         if (error) console.error('Error fetching center permissions:', error);
         centerPermissions = permissions?.reduce((acc, p) => ({ ...acc, [p.feature_name]: p.is_enabled }), {});
-      } else if (userData.role === 'teacher' && userData.teacher_id) {
+      } else if (user.role === 'teacher' && user.teacher_id) {
         const { data: permissions, error } = await supabase
           .from('teacher_feature_permissions')
           .select('feature_name, is_enabled')
-          .eq('teacher_id', userData.teacher_id);
+          .eq('teacher_id', user.teacher_id);
         if (error) console.error('Error fetching teacher permissions:', error);
         teacherPermissions = permissions?.reduce((acc, p) => ({ ...acc, [p.feature_name]: p.is_enabled }), {});
       }
 
+      // 6. Construct currentUser object
       const currentUser: User = {
-        id: userData.id,
-        username: userData.username, // Added username
-        email: userData.email,
-        first_name: userData.first_name,
-        last_name: userData.last_name,
-        role: userData.role,
-        tenant_id: userData.tenant_id,
-        center_id: userData.center_id,
-        center_name: userData.center_name,
-        student_id: userData.student_id,
-        student_name: userData.student_name,
-        teacher_id: userData.teacher_id,
-        teacher_name: userData.teacher_name,
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        role: user.role,
+        tenant_id: user.tenant_id,
+        center_id: user.center_id,
+        center_name: user.centers?.center_name || null,
+        student_id: user.student_id,
+        student_name: user.students?.name || null,
+        teacher_id: user.teacher_id,
+        teacher_name: user.teachers?.name || null,
         centerPermissions,
         teacherPermissions,
       };
