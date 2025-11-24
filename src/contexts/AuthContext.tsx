@@ -58,7 +58,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   ) => {
     console.log('AuthContext: login function called');
     try {
-      console.log('AuthContext: Attempting to invoke auth-login Edge Function...');
+      console.log('AuthContext: Preparing to invoke auth-login Edge Function...'); // Added this line
       const { data, error: invokeError } = await supabase.functions.invoke('auth-login', {
         body: { username, password },
       });
