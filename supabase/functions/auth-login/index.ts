@@ -3,7 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.80.0';
 import * as bcrypt from "bcryptjs";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://classms.netlify.app', // Changed from '*' to specific origin
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
